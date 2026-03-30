@@ -33,16 +33,17 @@
 ### 2.2 关键源码入口
 
 - Nav2 速度重映射：
+
   - `src/navigation/navigation/launch/navigation_launch.py`
   - 关键点：`controller_server` 先发 `cmd_vel_nav`，`velocity_smoother` 再发 `cmd_vel`
-
 - 底盘最终控制输出：
+
   - `src/navigation/fake_vel_transform/src/fake_vel_transform.cpp`
   - 常量定义：
     - `CMD_VEL_TOPIC = /cmd_vel`
     - `AFTER_TF_CMD_VEL = /cmd_vel_chassis`
-
 - 实车总启动入口：
+
   - `src/nav_bringup/launch/bringup_real.launch.py`
   - 其中会启动 `fake_vel_transform_node`
 
@@ -69,25 +70,26 @@
 必须关注：
 
 - 坐标/里程计
+
   - `bt_navigator.robot_base_frame`（当前为 `base_link_fake`）
   - `bt_navigator.odom_topic`（当前为 `/Odometry`）
-
 - TEB 速度上限
+
   - `FollowPath.max_vel_x`
   - `FollowPath.max_vel_y`
   - `FollowPath.max_vel_theta`
-
 - TEB 加速度上限
+
   - `FollowPath.acc_lim_x`
   - `FollowPath.acc_lim_y`
   - `FollowPath.acc_lim_theta`
-
 - 安全距离
+
   - `FollowPath.min_obstacle_dist`
   - `FollowPath.inflation_dist`
   - `local/global_costmap` 的 `inflation_radius`
-
 - 平滑器限幅（非常关键，避免电控端收到过猛指令）
+
   - `velocity_smoother.max_velocity`
   - `velocity_smoother.min_velocity`
   - `velocity_smoother.max_accel`
@@ -165,9 +167,7 @@ ros2 run tf2_ros tf2_echo map base_link_fake
 - TEB 的 `acc_lim_*`
 - 底盘驱动层是否又做了冲突的滤波
 
-## 8. 建议的工程边界
-
-建议保持职责清晰：
+## 8. 工程边界
 
 - 本工程：感知、定位、规划、速度指令输出
 - 底盘工程：执行控制、安全机制、驱动容错

@@ -1,3 +1,29 @@
-base_link2livox_frame:
-  xyz: "\"0.0 0.045 0.49\""
-  rpy: "\"0.0  0.0  0.0\""
+robot_measurements:
+  # base_link is defined at the ground-projected center of the vehicle:
+  # z = 0 at ground plane, x/y = geometric center of the chassis footprint.
+
+  vehicle_body:
+    # Current vehicle dimensions provided by user, converted from mm to m.
+    size: [0.6852, 0.57, 1.3345]
+
+  # Physical installation of the lidar relative to the robot base.
+  # This is the single source of truth for:
+  # 1. robot_state_publisher's base_link -> livox_frame TF
+  # 2. FAST_LIO published vehicle-center pose offset
+  #
+  # Unless you are recalibrating FAST_LIO's LiDAR-IMU extrinsic, lidar installation
+  # changes should be made here instead of editing fastlio_mid360_real.yaml.
+  base_link_to_livox:
+    # Current vehicle measurement provided by user, converted from mm to m.
+    xyz: [0.04851, 0.285, 0.1845]
+    rpy: [0.0, 0.0, 0.0]
+
+  # FAST_LIO internally estimates the sensor/body pose and this offset converts the
+  # published pose to the vehicle reference point expected by the rest of the stack.
+  # Keep this here so "physical measurement" parameters are edited in one place.
+  fastlio_vehicle_pose:
+    enabled: true
+    xyz: [0.31262, 0.0, 0.12925]
+    initial_zero_mean:
+      enabled: true
+      frames: 20

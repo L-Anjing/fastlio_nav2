@@ -55,37 +55,60 @@ TEB 主要通过 costmap 感知障碍，至少要保证：
 
 你是方形底盘时，不建议继续只用 `robot_radius`。
 
+本工程当前已经把“车体物理尺寸”统一收口到：
+
+- `src/nav_bringup/config/reality/measurement_params_real.yaml`
+
+优先改：
+
+- `robot_measurements.vehicle_body.size`
+
+然后由 `bringup_real.launch.py` 自动下发到：
+
+- URDF 车体盒体
+- Nav2 local/global costmap footprint
+- TEB `footprint_model`
+
 ### 3.1 Costmap 改为 footprint
 
-文件：`src/nav_bringup/config/reality/nav2_params_real.yaml`
+优先入口：`src/nav_bringup/config/reality/measurement_params_real.yaml`
 
-位置：
-
-- `local_costmap.local_costmap.ros__parameters`
-- `global_costmap.global_costmap.ros__parameters`
-
-做法：
-
-1. 注释 `robot_radius`
-2. 增加 `footprint`
-
-示例（车长 0.56m、车宽 0.46m、安全余量 2cm）：
+当前这台车的自动推导结果是：
 
 ```yaml
-footprint: "[[0.30,0.25],[0.30,-0.25],[-0.30,-0.25],[-0.30,0.25]]"
+robot_measurements:
+  vehicle_body:
+    size: [0.6852, 0.57, 1.3345]
 ```
+
+对应 footprint：
+
+```yaml
+footprint: "[[0.3426,0.285],[0.3426,-0.285],[-0.3426,-0.285],[-0.3426,0.285]]"
+```
+
+如果你换车，推荐做法不是手改 `nav2_params_real.yaml`，而是改 `vehicle_body.size`。
+
+只有在你明确想脱离这套自动同步逻辑时，才直接去改：
+
+- `local_costmap.local_costmap.ros__parameters.footprint`
+- `global_costmap.global_costmap.ros__parameters.footprint`
 
 ### 3.2 FollowPath 增加 footprint_model
 
 位置：`controller_server.ros__parameters.FollowPath`
 
+当前自动推导结果：
+
 ```yaml
 footprint_model:
   type: "polygon"
-  vertices: [[0.30,0.25],[0.30,-0.25],[-0.30,-0.25],[-0.30,0.25]]
+  vertices: [[0.3426,0.285],[0.3426,-0.285],[-0.3426,-0.285],[-0.3426,0.285]]
 ```
 
 要求：TEB `vertices` 必须与 costmap `footprint` 对齐。
+
+在本工程当前版本里，这部分由 launch 自动同步，不建议手工分别维护。
 
 ## 4. TEB 调参顺序（按风险从低到高）
 
@@ -165,6 +188,7 @@ ros2 topic hz /cmd_vel
 
 优先检查：
 
+- `measurement_params_real.yaml` 的 `vehicle_body.size` 是否正确
 - `footprint` 与 `footprint_model` 是否一致
 - `dt_ref` 是否过小
 - `max_vel_*` / `acc_lim_*` 是否过激

@@ -143,9 +143,14 @@ bool   runtime_pos_log = false, pcd_save_en = false, time_sync_en = false, extri
 
 bool feature_pub_en = false, effect_pub_en = false;
 
-constexpr double LIDAR_TO_VEHICLE_DIS_X = 0.31262; // meter
-constexpr double LIDAR_TO_VEHICLE_DELTA_Z = 0.12925; // meter
-constexpr int INIT_ZERO_MEAN_FRAMES = 20;
+// These defaults preserve the previous hard-coded behavior while allowing
+// the vehicle-frame publishing offset to be configured from YAML.
+bool publish_vehicle_pose_offset_en = true;
+double vehicle_pose_offset_x = 0.31262; // meter
+double vehicle_pose_offset_y = 0.0;     // meter
+double vehicle_pose_offset_z = 0.12925; // meter
+bool publish_initial_zero_mean_en = true;
+int init_zero_mean_frames = 20;
 
 mutex mtx_origin_zero;
 int origin_zero_count = 0;
@@ -881,6 +886,11 @@ void publish_odometryhighfreq(const rclcpp::Node::SharedPtr node_, PoseBuffer& p
 template<typename T>
 inline void apply_vehicle_frame_offset(T &pose)
 {
+    if (!publish_vehicle_pose_offset_en)
+    {
+        return;
+    }
+
     const double qx = pose.orientation.x;
     const double qy = pose.orientation.y;
     const double qz = pose.orientation.z;
@@ -892,14 +902,20 @@ inline void apply_vehicle_frame_offset(T &pose)
     const double y = pose.position.y;
     const double z = pose.position.z;
 
-    pose.position.x = x + cos(yaw) * LIDAR_TO_VEHICLE_DIS_X;
-    pose.position.y = y - sin(yaw) * LIDAR_TO_VEHICLE_DIS_X;
-    pose.position.z = z + LIDAR_TO_VEHICLE_DELTA_Z;
+    // Keep the legacy projection convention while making the offset fully configurable.
+    pose.position.x = x + cos(yaw) * vehicle_pose_offset_x + sin(yaw) * vehicle_pose_offset_y;
+    pose.position.y = y - sin(yaw) * vehicle_pose_offset_x + cos(yaw) * vehicle_pose_offset_y;
+    pose.position.z = z + vehicle_pose_offset_z;
 }
 
 template<typename T>
 inline void apply_initial_zero_mean_offset(T &pose)
 {
+    if (!publish_initial_zero_mean_en || init_zero_mean_frames <= 0)
+    {
+        return;
+    }
+
     std::lock_guard<std::mutex> lock(mtx_origin_zero);
 
     if (!origin_zero_ready)
@@ -909,7 +925,7 @@ inline void apply_initial_zero_mean_offset(T &pose)
         origin_zero_sum_z += pose.position.z;
         origin_zero_count++;
 
-        if (origin_zero_count >= INIT_ZERO_MEAN_FRAMES)
+        if (origin_zero_count >= init_zero_mean_frames)
         {
             origin_zero_mean_x = origin_zero_sum_x / static_cast<double>(origin_zero_count);
             origin_zero_mean_y = origin_zero_sum_y / static_cast<double>(origin_zero_count);
@@ -1204,6 +1220,12 @@ int main(int argc, char** argv)
         nh.param<bool>("feature_extract_enable", p_pre->feature_enabled, false);
         nh.param<bool>("runtime_pos_log_enable", runtime_pos_log, 0);
         nh.param<bool>("mapping/extrinsic_est_en", extrinsic_est_en, true);
+        nh.param<bool>("publish/vehicle_pose_offset_en", publish_vehicle_pose_offset_en, true);
+        nh.param<double>("publish/vehicle_pose_offset_x", vehicle_pose_offset_x, 0.31262);
+        nh.param<double>("publish/vehicle_pose_offset_y", vehicle_pose_offset_y, 0.0);
+        nh.param<double>("publish/vehicle_pose_offset_z", vehicle_pose_offset_z, 0.12925);
+        nh.param<bool>("publish/initial_zero_mean_en", publish_initial_zero_mean_en, true);
+        nh.param<int>("publish/initial_zero_mean_frames", init_zero_mean_frames, 20);
         nh.param<bool>("pcd_save/pcd_save_en", pcd_save_en, false);
         nh.param<int>("pcd_save/interval", pcd_save_interval, -1);
         nh.param<vector<double>>("mapping/extrinsic_T", extrinT, vector<double>());
@@ -1246,6 +1268,18 @@ int main(int argc, char** argv)
         p_pre->feature_enabled = node->declare_parameter<bool>("feature_extract_enable", false);
         runtime_pos_log = node->declare_parameter<bool>("runtime_pos_log_enable", 0);
         extrinsic_est_en = node->declare_parameter<bool>("mapping.extrinsic_est_en", true);
+        publish_vehicle_pose_offset_en =
+            node->declare_parameter<bool>("publish.vehicle_pose_offset_en", true);
+        vehicle_pose_offset_x =
+            node->declare_parameter<double>("publish.vehicle_pose_offset_x", 0.31262);
+        vehicle_pose_offset_y =
+            node->declare_parameter<double>("publish.vehicle_pose_offset_y", 0.0);
+        vehicle_pose_offset_z =
+            node->declare_parameter<double>("publish.vehicle_pose_offset_z", 0.12925);
+        publish_initial_zero_mean_en =
+            node->declare_parameter<bool>("publish.initial_zero_mean_en", true);
+        init_zero_mean_frames =
+            node->declare_parameter<int>("publish.initial_zero_mean_frames", 20);
         pcd_save_en = node->declare_parameter<bool>("pcd_save.pcd_save_en", false);
         pcd_save_interval = node->declare_parameter<int>("pcd_save.interval", -1);
         extrinT = node->declare_parameter<vector<double>>("mapping.extrinsic_T", vector<double>());

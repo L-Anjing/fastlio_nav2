@@ -14,24 +14,26 @@
   </xacro:macro>
 
   <!-- base_link to livox_frame -->
-  <xacro:arg name="xyz" default="0.0 0.045 0.49" />
+  <xacro:arg name="xyz" default="0.04851 0.285 0.1845" />
   <xacro:arg name="rpy" default="0 0 0" />
+  <xacro:arg name="body_size" default="0.6852 0.57 1.3345" />
+  <xacro:arg name="body_center_z" default="0.66725" />
   
   <link name="base_link">
     <visual>
       <geometry>
-        <box size="0.2 .3 .1"/>
+        <box size="$(arg body_size)"/>
       </geometry>
-      <origin rpy="0 0 ${PI/2}" xyz="0 0 0.05"/>
+      <origin rpy="0 0 ${PI/2}" xyz="0 0 $(arg body_center_z)"/>
       <material name="white">
         <color rgba="1 1 1 1"/>
       </material>
     </visual>
     <collision>
       <geometry>
-        <box size="0.2 .3 0.1"/>
+        <box size="$(arg body_size)"/>
       </geometry>
-      <origin rpy="0 0 ${PI/2}" xyz="0 0 0.05"/>
+      <origin rpy="0 0 ${PI/2}" xyz="0 0 $(arg body_center_z)"/>
     </collision>
     <xacro:default_inertial mass="8.2"/>
   </link>

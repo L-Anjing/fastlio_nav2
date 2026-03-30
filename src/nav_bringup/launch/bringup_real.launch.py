@@ -1,4 +1,5 @@
 import os
+import tempfile
 import yaml
 
 from ament_index_python.packages import get_package_share_directory
@@ -9,6 +10,27 @@ from launch_ros.actions import Node
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, Command
 from launch.conditions import LaunchConfigurationEquals, LaunchConfigurationNotEquals, IfCondition
+
+
+def _format_xacro_vector_arg(value):
+    if isinstance(value, str):
+        return value
+    return '"{}"'.format(' '.join(str(v) for v in value))
+
+
+def _as_float_vector(value):
+    if isinstance(value, str):
+        stripped = value.strip().strip('"').strip("'")
+        return [float(v) for v in stripped.split()]
+    return [float(v) for v in value]
+
+
+def _write_temp_yaml(data, prefix):
+    temp_file = tempfile.NamedTemporaryFile(
+        mode='w', suffix='.yaml', prefix=prefix, delete=False, encoding='utf-8')
+    yaml.safe_dump(data, temp_file, allow_unicode=True, sort_keys=False)
+    temp_file.close()
+    return temp_file.name
 
 
 def generate_launch_description():
@@ -23,15 +45,51 @@ def generate_launch_description():
     use_nav_rviz = LaunchConfiguration('nav_rviz')
 
     ################################ robot_description parameters start ###############################
-    launch_params = yaml.safe_load(open(os.path.join(
-    get_package_share_directory('nav_bringup'), 'config', 'reality', 'measurement_params_real.yaml')))
+    measurement_params = yaml.safe_load(open(os.path.join(
+        get_package_share_directory('nav_bringup'), 'config', 'reality', 'measurement_params_real.yaml')))
+
+    measurement_root = measurement_params.get('robot_measurements', {})
+    base_link_to_livox = measurement_root.get('base_link_to_livox')
+    if base_link_to_livox is None:
+        # Backward-compatible fallback for older measurement config layout.
+        base_link_to_livox = measurement_params['base_link2livox_frame']
+    base_link_to_livox_xyz_values = _as_float_vector(base_link_to_livox['xyz'])
+    base_link_to_livox_rpy_values = _as_float_vector(base_link_to_livox['rpy'])
+
+    vehicle_body = measurement_root.get('vehicle_body', {})
+    vehicle_body_size = _as_float_vector(vehicle_body.get('size', [0.6852, 0.57, 1.3345]))
+    fastlio_vehicle_pose = measurement_root.get('fastlio_vehicle_pose', {})
+    fastlio_vehicle_zero_mean = fastlio_vehicle_pose.get('initial_zero_mean', {})
+    fastlio_vehicle_pose_xyz = _as_float_vector(
+        fastlio_vehicle_pose.get('xyz', [0.31262, 0.0, 0.12925]))
+    body_half_length = vehicle_body_size[0] / 2.0
+    body_half_width = vehicle_body_size[1] / 2.0
+    body_center_z = vehicle_body_size[2] / 2.0
+    footprint_vertices = [
+        [body_half_length, body_half_width],
+        [body_half_length, -body_half_width],
+        [-body_half_length, -body_half_width],
+        [-body_half_length, body_half_width],
+    ]
+    nav2_footprint = str(footprint_vertices).replace(' ', '')
+
+    base_link_to_livox_xyz = _format_xacro_vector_arg(base_link_to_livox_xyz_values)
+    base_link_to_livox_rpy = _format_xacro_vector_arg(base_link_to_livox_rpy_values)
+    body_size_xyz = _format_xacro_vector_arg(vehicle_body_size)
     robot_description = Command(['xacro ', os.path.join(
-    get_package_share_directory('nav_bringup'), 'urdf', 'sentry_robot_real.xacro'),
-    ' xyz:=', launch_params['base_link2livox_frame']['xyz'], ' rpy:=', launch_params['base_link2livox_frame']['rpy']])
+        get_package_share_directory('nav_bringup'), 'urdf', 'sentry_robot_real.xacro'),
+        ' xyz:=', base_link_to_livox_xyz,
+        ' rpy:=', base_link_to_livox_rpy,
+        ' body_size:=', body_size_xyz,
+        ' body_center_z:=', str(body_center_z)])
     ################################# robot_description parameters end ################################
 
     ########################## linefit_ground_segementation parameters start ##########################
-    segmentation_params = os.path.join(nav_bringup_dir, 'config', 'reality', 'segmentation_real.yaml')
+    segmentation_params_source = os.path.join(nav_bringup_dir, 'config', 'reality', 'segmentation_real.yaml')
+    with open(segmentation_params_source, 'r', encoding='utf-8') as segmentation_file:
+        segmentation_params = yaml.safe_load(segmentation_file)
+    segmentation_params['ground_segmentation']['ros__parameters']['sensor_height'] = base_link_to_livox_xyz_values[2]
+    segmentation_params = _write_temp_yaml(segmentation_params, 'segmentation_real_')
     ########################## linefit_ground_segementation parameters end ############################
 
     #################################### FAST_LIO parameters start ####################################
@@ -52,7 +110,16 @@ def generate_launch_description():
 
     ################################### navigation2 parameters start ##################################
     nav2_map_dir = [PathJoinSubstitution([nav_bringup_dir, 'map', world]), ".yaml"]
-    nav2_params_file_dir = os.path.join(nav_bringup_dir, 'config', 'reality', 'nav2_params_real.yaml')
+    nav2_params_source = os.path.join(nav_bringup_dir, 'config', 'reality', 'nav2_params_real.yaml')
+    with open(nav2_params_source, 'r', encoding='utf-8') as nav2_file:
+        nav2_params = yaml.safe_load(nav2_file)
+    nav2_params['controller_server']['ros__parameters']['FollowPath']['footprint_model'] = {
+        'type': 'polygon',
+        'vertices': footprint_vertices
+    }
+    nav2_params['local_costmap']['local_costmap']['ros__parameters']['footprint'] = nav2_footprint
+    nav2_params['global_costmap']['global_costmap']['ros__parameters']['footprint'] = nav2_footprint
+    nav2_params_file_dir = _write_temp_yaml(nav2_params, 'nav2_params_real_')
     ################################### navigation2 parameters end ####################################
 
     ################################ icp_registration parameters start ################################
@@ -233,6 +300,12 @@ def generate_launch_description():
                     fastlio_mid360_params,
                     {
                         'use_sim_time': use_sim_time,
+                        'publish.vehicle_pose_offset_en': fastlio_vehicle_pose.get('enabled', True),
+                        'publish.vehicle_pose_offset_x': fastlio_vehicle_pose_xyz[0],
+                        'publish.vehicle_pose_offset_y': fastlio_vehicle_pose_xyz[1],
+                        'publish.vehicle_pose_offset_z': fastlio_vehicle_pose_xyz[2],
+                        'publish.initial_zero_mean_en': fastlio_vehicle_zero_mean.get('enabled', True),
+                        'publish.initial_zero_mean_frames': fastlio_vehicle_zero_mean.get('frames', 20),
                         # Prefer package-relative map location over hard-coded absolute path.
                         'map_file_path': fastlio_map_file_path
                     }
