@@ -50,6 +50,7 @@ sudo make install
 - `src/nav_bringup/config/reality/fastlio_mid360_real.yaml`：FAST_LIO 参数（含 LiDAR-IMU 外参、PCD 地图路径）。
 - `src/nav_bringup/config/reality/MID360_config.json`：Livox 网络参数（雷达 IP、主机网口 IP、端口）。
 - `src/navigation/teb_local_planner/README.md`：本工程 TEB 使用与调参说明（本文档同步维护）。
+- `docs` : 底盘控制接口以及参数配置说明文件
 
 ## 3. 实车流程
 
@@ -91,7 +92,7 @@ nav_rviz:=True
 
 ## 4. 方形车适配：必须改哪些参数
 
-你的车仍是方形底盘，但尺寸可能不同。建议按下面顺序改，风险最低。
+车是方形底盘，但尺寸可能不同。建议按下面顺序改。
 
 ### 4.1 第一步：改雷达网络（能连上雷达）
 
@@ -229,12 +230,15 @@ footprint_model:
 换车但雷达型号不变时，优先级如下：
 
 1. `measurement_params_real.yaml`
+
 - 改 `base_link2livox_frame.xyz/rpy`（最关键）
 
 2. `MID360_config.json`
+
 - 改网络 IP，确保驱动联通
 
 3. `fastlio_mid360_real.yaml`
+
 - `mapping.extrinsic_T/R` 是 LiDAR-IMU 外参，通常不是“换底盘尺寸”要改的参数
 
 ## 7. 坐标系与控制链注意事项
