@@ -8,7 +8,7 @@
     odom_frame_id: "odom"
     range_odom_frame_id: "lidar_odom"
     laser_frame_id: "livox_frame"
-    pointcloud_topic: "/livox/lidar/pointcloud"
+    pointcloud_topic: "/livox/lidar"
     thresh: 0.1
     xy_offset: 0.2
     yaw_offset: 30.0

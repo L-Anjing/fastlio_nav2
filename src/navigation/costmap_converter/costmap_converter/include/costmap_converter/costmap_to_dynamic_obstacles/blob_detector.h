@@ -84,8 +84,8 @@ public:
                       const cv::Mat& mask = cv::Mat());
 
   //! OpenCV4 requires these pure virtual methods to be implemented.
-  void setParams(const cv::SimpleBlobDetector::Params& parameters) override;
-  cv::SimpleBlobDetector::Params getParams() const override;
+  void setParams(const cv::SimpleBlobDetector::Params& parameters);
+  cv::SimpleBlobDetector::Params getParams() const;
 
   /**
    * @brief Access contours extracted during detection stage

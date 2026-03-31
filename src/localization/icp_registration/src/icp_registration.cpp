@@ -83,10 +83,19 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
     tf2::Quaternion q;
     q.setRPY(initial_pose_vec.at(3), initial_pose_vec.at(4),
              initial_pose_vec.at(5));
+    q.normalize();
+    initial_pose_.orientation.x = q.x();
+    initial_pose_.orientation.y = q.y();
+    initial_pose_.orientation.z = q.z();
+    initial_pose_.orientation.w = q.w();
   } catch (const std::out_of_range &ex) {
     RCLCPP_ERROR(this->get_logger(),
                  "initial_pose is not a vector with 6 elements, what():%s",
                  ex.what());
+    initial_pose_.orientation.x = 0.0;
+    initial_pose_.orientation.y = 0.0;
+    initial_pose_.orientation.z = 0.0;
+    initial_pose_.orientation.w = 1.0;
   }
 
   // Set up the pointcloud subscriber
@@ -94,7 +103,8 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
       "pointcloud_topic", std::string("/livox/lidar/pointcloud"));
   RCLCPP_INFO(this->get_logger(), "pointcloud_topic: %s",
               pointcloud_topic.c_str());
-  auto qos = rclcpp::QoS(rclcpp::KeepLast(10));
+  // Use SensorDataQoS (best effort) to match high-rate LiDAR publishers.
+  auto qos = rclcpp::SensorDataQoS();
   pointcloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
       pointcloud_topic, qos,
       std::bind(&IcpNode::pointcloudCallback, this, std::placeholders::_1));

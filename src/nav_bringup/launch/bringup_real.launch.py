@@ -10,6 +10,7 @@ from launch_ros.actions import Node
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, Command
 from launch.conditions import LaunchConfigurationEquals, LaunchConfigurationNotEquals, IfCondition
+from launch.substitutions import TextSubstitution
 
 
 def _format_xacro_vector_arg(value):
@@ -103,19 +104,21 @@ def generate_launch_description():
     #################################### POINT_LIO parameters end #####################################
 
     ################################## slam_toolbox parameters start ##################################
-    slam_toolbox_map_dir = PathJoinSubstitution([nav_bringup_dir, 'map', world])
+    slam_toolbox_map_prefix = PathJoinSubstitution([nav_bringup_dir, 'map', world])
     slam_toolbox_localization_file_dir = os.path.join(nav_bringup_dir, 'config', 'reality', 'mapper_params_localization_real.yaml')
     slam_toolbox_mapping_file_dir = os.path.join(nav_bringup_dir, 'config', 'reality', 'mapper_params_online_async_real.yaml')
     ################################### slam_toolbox parameters end ###################################
 
     ################################### navigation2 parameters start ##################################
-    nav2_map_dir = [PathJoinSubstitution([nav_bringup_dir, 'map', world]), ".yaml"]
+    nav2_map_prefix = PathJoinSubstitution([nav_bringup_dir, 'map', world])
+    nav2_map_dir = [nav2_map_prefix, TextSubstitution(text='.yaml')]
     nav2_params_source = os.path.join(nav_bringup_dir, 'config', 'reality', 'nav2_params_real.yaml')
     with open(nav2_params_source, 'r', encoding='utf-8') as nav2_file:
         nav2_params = yaml.safe_load(nav2_file)
     nav2_params['controller_server']['ros__parameters']['FollowPath']['footprint_model'] = {
         'type': 'polygon',
-        'vertices': footprint_vertices
+        # TEB expects a string for polygon vertices; this also avoids launch normalization errors.
+        'vertices': nav2_footprint
     }
     nav2_params['local_costmap']['local_costmap']['ros__parameters']['footprint'] = nav2_footprint
     nav2_params['global_costmap']['global_costmap']['ros__parameters']['footprint'] = nav2_footprint
@@ -123,9 +126,10 @@ def generate_launch_description():
     ################################### navigation2 parameters end ####################################
 
     ################################ icp_registration parameters start ################################
-    icp_pcd_dir = [PathJoinSubstitution([nav_bringup_dir, 'PCD', world]), ".pcd"]
+    icp_pcd_prefix = PathJoinSubstitution([nav_bringup_dir, 'PCD', world])
+    icp_pcd_dir = [icp_pcd_prefix, TextSubstitution(text='.pcd')]
     icp_registration_params_dir = os.path.join(nav_bringup_dir, 'config', 'reality', 'icp_registration_real.yaml')
-    fastlio_map_file_path = [PathJoinSubstitution([nav_bringup_dir, 'PCD', world]), ".pcd"]
+    fastlio_map_file_path = [icp_pcd_prefix, TextSubstitution(text='.pcd')]
     ################################# icp_registration parameters end #################################
 
     ############################# pointcloud_downsampling parameters start ############################
@@ -186,7 +190,7 @@ def generate_launch_description():
     
     declare_LIO_cmd = DeclareLaunchArgument(
         'lio',
-        default_value='fast_lio',
+        default_value='fastlio',
         description='Choose lio alogrithm: fastlio or pointlio')
 
     declare_localization_cmd = DeclareLaunchArgument(
@@ -240,8 +244,8 @@ def generate_launch_description():
 
     bringup_pointcloud_to_laserscan_node = Node(
         package='pointcloud_to_laserscan', executable='pointcloud_to_laserscan_node',
-        remappings=[('cloud_in',  ['/segmentation/obstacle']),
-                    ('scan',  ['/scan'])],
+        remappings=[('cloud_in', '/segmentation/obstacle'),
+                    ('scan', '/scan')],
         parameters=[{
             'target_frame': 'livox_frame',
             'transform_tolerance': 0.01,
@@ -293,6 +297,16 @@ def generate_launch_description():
                 arguments=['--frame-id', 'body', '--child-frame-id', 'dummy'],
                 output='screen'
             ),
+            # 连接算法输出中心 (body) 到机器人底盘中心 (base_link)
+            Node(
+                package='tf2_ros',
+                executable='static_transform_publisher',
+                name='body_to_base_link_publisher',
+                arguments=['--x', '0', '--y', '0', '--z', '0', 
+                           '--roll', '0', '--pitch', '0', '--yaw', '0', 
+                           '--frame-id', 'body', '--child-frame-id', 'base_link'],
+                output='screen'
+            ),
             Node(
                 package='fast_lio',
                 executable='fastlio_mapping',
@@ -300,6 +314,8 @@ def generate_launch_description():
                     fastlio_mid360_params,
                     {
                         'use_sim_time': use_sim_time,
+                        # Use raw Livox IMU to avoid timestamp loop-back introduced by filter chain.
+                        'common.imu_topic': '/livox/imu',
                         'publish.vehicle_pose_offset_en': fastlio_vehicle_pose.get('enabled', True),
                         'publish.vehicle_pose_offset_x': fastlio_vehicle_pose_xyz[0],
                         'publish.vehicle_pose_offset_y': fastlio_vehicle_pose_xyz[1],
@@ -360,10 +376,11 @@ def generate_launch_description():
                 package='slam_toolbox',
                 executable='localization_slam_toolbox_node',
                 name='slam_toolbox',
+                output='screen',
                 parameters=[
                     slam_toolbox_localization_file_dir,
                     {'use_sim_time': use_sim_time,
-                    'map_file_name': slam_toolbox_map_dir,
+                    'map_file_name': [slam_toolbox_map_prefix, TextSubstitution(text='.posegraph')],
                     'map_start_pose': [0.0, 0.0, 0.0]}
                 ],
             ),
@@ -397,7 +414,7 @@ def generate_launch_description():
 
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(os.path.join(navigation2_launch_dir, 'map_server_launch.py')),
-                condition = LaunchConfigurationNotEquals('localization', 'slam_toolbox'),
+                condition = LaunchConfigurationEquals('localization', 'icp'),
                 launch_arguments={
                     'use_sim_time': use_sim_time,
                     'map': nav2_map_dir,

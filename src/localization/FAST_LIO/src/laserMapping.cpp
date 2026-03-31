@@ -139,6 +139,7 @@ double T1[MAXN], s_plot[MAXN], s_plot2[MAXN], s_plot3[MAXN], s_plot4[MAXN], s_pl
 double match_time = 0, solve_time = 0, solve_const_H_time = 0;
 int    kdtree_size_st = 0, kdtree_size_end = 0, add_point_size = 0, kdtree_delete_counter = 0;
 bool   runtime_pos_log = false, pcd_save_en = false, time_sync_en = false, extrinsic_est_en = true, path_en = true;
+string pcd_save_file_name = "scans.pcd";
 /**************************/
 
 bool feature_pub_en = false, effect_pub_en = false;
@@ -180,7 +181,7 @@ double gyr_cov = 0.1, acc_cov = 0.1, b_gyr_cov = 0.0001, b_acc_cov = 0.0001;
 double filter_size_corner_min = 0, filter_size_surf_min = 0, filter_size_map_min = 0, fov_deg = 0;
 double cube_len = 0, HALF_FOV_COS = 0, FOV_DEG = 0, total_distance = 0, lidar_end_time = 0, first_lidar_time = 0.0;
 int    effct_feat_num = 0, time_log_counter = 0, scan_count = 0, publish_count = 0;
-int    iterCount = 0, feats_down_size = 0, NUM_MAX_ITERATIONS = 0, laserCloudValidNum = 0, pcd_save_interval = -1, pcd_index = 0;
+int    iterCount = 0, feats_down_size = 0, NUM_MAX_ITERATIONS = 0, laserCloudValidNum = 0, pcd_save_interval = -1;
 bool   point_selected_surf[100000] = {0};
 bool   lidar_pushed, flg_first_scan = true, flg_exit = false, flg_EKF_inited;
 bool   scan_pub_en = false, dense_pub_en = false, scan_body_pub_en = false;
@@ -706,12 +707,10 @@ void publish_frame_world(const Pcl2Publisher & pubLaserCloudFull)
         scan_wait_num ++;
         if (pcl_wait_save->size() > 0 && pcd_save_interval > 0  && scan_wait_num >= pcd_save_interval)
         {
-            pcd_index ++;
-            string all_points_dir(string(string(ROOT_DIR) + "PCD/scans_") + to_string(pcd_index) + string(".pcd"));
+            string all_points_dir = string(ROOT_DIR) + "PCD/" + pcd_save_file_name;
             pcl::PCDWriter pcd_writer;
-            cout << "current scan saved to /PCD/" << all_points_dir << endl;
+            cout << "current accumulated map saved to /PCD/" << pcd_save_file_name << endl;
             pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
-            pcl_wait_save->clear();
             scan_wait_num = 0;
         }
     }
@@ -1228,6 +1227,7 @@ int main(int argc, char** argv)
         nh.param<int>("publish/initial_zero_mean_frames", init_zero_mean_frames, 20);
         nh.param<bool>("pcd_save/pcd_save_en", pcd_save_en, false);
         nh.param<int>("pcd_save/interval", pcd_save_interval, -1);
+        nh.param<string>("pcd_save/file_name", pcd_save_file_name, string("scans.pcd"));
         nh.param<vector<double>>("mapping/extrinsic_T", extrinT, vector<double>());
         nh.param<vector<double>>("mapping/extrinsic_R", extrinR, vector<double>());
         path.header.stamp    = ros::Time::now();
@@ -1282,6 +1282,7 @@ int main(int argc, char** argv)
             node->declare_parameter<int>("publish.initial_zero_mean_frames", 20);
         pcd_save_en = node->declare_parameter<bool>("pcd_save.pcd_save_en", false);
         pcd_save_interval = node->declare_parameter<int>("pcd_save.interval", -1);
+        pcd_save_file_name = node->declare_parameter<string>("pcd_save.file_name", "scans.pcd");
         extrinT = node->declare_parameter<vector<double>>("mapping.extrinsic_T", vector<double>());
         extrinR = node->declare_parameter<vector<double>>("mapping.extrinsic_R", vector<double>());
         path.header.stamp = rclcpp::Clock().now(); 
@@ -1632,10 +1633,9 @@ int main(int argc, char** argv)
     /* 2. pcd save will largely influence the real-time performences **/
     if (pcl_wait_save->size() > 0 && pcd_save_en)
     {
-        string file_name = string("scans.pcd");
-        string all_points_dir(string(string(ROOT_DIR) + "PCD/") + file_name);
+        string all_points_dir(string(string(ROOT_DIR) + "PCD/") + pcd_save_file_name);
         pcl::PCDWriter pcd_writer;
-        cout << "current scan saved to /PCD/" << file_name<<endl;
+        cout << "current accumulated map saved to /PCD/" << pcd_save_file_name << endl;
         pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
     }
 

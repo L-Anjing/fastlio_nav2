@@ -49,9 +49,9 @@ sudo make install
 - `docs/chassis_integration.md`：底盘控制对接说明。
 - `src/navigation/teb_local_planner/README.md`：TEB 控制器使用与调参说明。
 
-## 3. 实车流程
+## 3. 推荐流程（当前主用：slam_toolbox）
 
-### 3.1 边建图边导航（在线建图）
+### 3.1 建图（slam_toolbox + fastlio）
 
 ```bash
 ros2 launch nav_bringup bringup_real.launch.py \
@@ -69,7 +69,7 @@ ros2 service call /slam_toolbox/save_map slam_toolbox/srv/SaveMap "{name: {data:
 ./save_pcd.sh
 ```
 
-### 3.2 已知地图导航（全局地图已存在）
+### 3.2 导航（仅 `mode:=nav`，主推 slam_toolbox 定位）
 
 ```bash
 ros2 launch nav_bringup bringup_real.launch.py \
@@ -81,19 +81,24 @@ lio_rviz:=False \
 nav_rviz:=True
 ```
 
-`localization`（仅 `mode:=nav` 有效）支持：
+### 3.3 `localization` 选项（仅 `mode:=nav` 有效）
+
+当前建议优先使用：
 
 - `slam_toolbox`
-- `amcl`
-- `icp`
+
+另外两种可选（保留，后续可继续调优）：
+
+- `amcl`（使用 `map/*.yaml + *.pgm`）
+- `icp`（使用 `PCD/*.pcd`）
 
 ## 4. 坐标系与控制链注意事项
 
 当前工程里，Nav2 使用：
 
-- `robot_base_frame: base_link_fake`
+- `robot_base_frame: base_link`
 
-并由 `fake_vel_transform` 参与控制链路。如果你后续想改回 `base_link`，必须同步修改：
+并由 `fake_vel_transform` 参与控制链路。如果你后续改动基坐标系，必须同步修改：
 
 - `bt_navigator.robot_base_frame`
 - `local_costmap.robot_base_frame`
@@ -111,6 +116,6 @@ nav_rviz:=True
 
 ## 6. 配置与对接文档
 
-- 配置文件职责、参数说明、改哪个文件： [docs/config_single_source.md](/home/pi/workspace2/fastlio_nav2/docs/config_single_source.md#L1)
-- 底盘控制对接： [docs/chassis_integration.md](/home/pi/workspace2/fastlio_nav2/docs/chassis_integration.md#L1)
-- TEB 详细使用和排错： [src/navigation/teb_local_planner/README.md](/home/pi/workspace2/fastlio_nav2/src/navigation/teb_local_planner/README.md#L1)
+- 配置文件职责、参数说明、改哪个文件： [docs/config_single_source.md](docs/config_single_source.md)
+- 底盘控制对接： [docs/chassis_integration.md](docs/chassis_integration.md)
+- TEB 详细使用和排错： [src/navigation/teb_local_planner/README.md](src/navigation/teb_local_planner/README.md)

@@ -51,7 +51,7 @@ bt_navigator:
   ros__parameters:
     use_sim_time: False
     global_frame: map
-    robot_base_frame: base_link_fake
+    robot_base_frame: base_link
     odom_topic: /Odometry
     bt_loop_duration: 10
     default_server_timeout: 20
@@ -119,9 +119,9 @@ controller_server:
       dt_ref: 0.6                                   #轨迹的期望时间分辨率（应该与底层控制速率的数量级相符）
       dt_hysteresis: 0.06                           #自动调整大小的滞后（根据当前时间分辨率 dt）：通常为 dt_ref 的 10%
       max_samples: 500                              #最大样本数量；警告：如果太小，离散化/分辨率可能不足以用于给定的机器人模型，或者避障不再有效。
-      global_plan_overwrite_orientation: False      #覆盖全局规划器提供的局部子目标的方向
-      allow_init_with_backwards_motion: True        #如果为真，基础轨迹可能会以后退运动初始化，以防目标在本地代价地图中位于起点之后（仅当机器人配备后部传感器时推荐）
-      max_global_plan_lookahead_dist: 2.0           #指定用于优化考虑的全局规划子集的最大长度（累积欧氏距离）[如果 <=0：禁用；长度也受到本地代价地图大小的限制！
+      global_plan_overwrite_orientation: True       #覆盖全局规划器提供的局部子目标的方向
+      allow_init_with_backwards_motion: False       #如果为真，基础轨迹可能会以后退运动初始化，以防目标在本地代价地图中位于起点之后（仅当机器人配备后部传感器时推荐）
+      max_global_plan_lookahead_dist: 3.0           #指定用于优化考虑的全局规划子集的最大长度（累积欧氏距离）[如果 <=0：禁用；长度也受到本地代价地图大小的限制！
       force_reinit_new_goal_dist: 1.0               #如果之前的目标更新距离超过此值，则强制规划器重新初始化轨迹
       force_reinit_new_goal_angular: 0.78           #如果之前的目标更新的角度超过此弧度值，则强制规划器重新初始化轨迹
       feasibility_check_no_poses: 0                 #在预测路径上，每个采样间隔需要检查可行性的姿态数目
@@ -140,10 +140,10 @@ controller_server:
       # Robot
       #*******************************************************************************
       max_vel_x: 2.0                        #最大平移速度
-      max_vel_x_backwards: 2.0              #最大后退速度
-      max_vel_theta: 6.0                    #最大转向角速度
+      max_vel_x_backwards: 0.1              #最大后退速度
+      max_vel_theta: 1.2                    #最大转向角速度
       acc_lim_x: 2.0                        #最大平移加速度
-      acc_lim_theta: 6.0                    #最大角加速度
+      acc_lim_theta: 1.5                    #最大角加速度
       footprint_model:
         type: "polygon"
         vertices: [[0.3426,0.285],[0.3426,-0.285],[-0.3426,-0.285],[-0.3426,0.285]]
@@ -161,8 +161,8 @@ controller_server:
       #*******************************************************************************
       # Robot/Omni 此部分参数仅适用于全方位移动机器人
       #*******************************************************************************
-      max_vel_y: 2.0
-      acc_lim_y: 2.0
+      max_vel_y: 0.0
+      acc_lim_y: 0.0
 
       #*******************************************************************************
       # GoalTolerance 目标容差
@@ -172,9 +172,9 @@ controller_server:
       #*******************************************************************************
       # Obstacles 障碍物
       #*******************************************************************************
-      min_obstacle_dist: 0.25                     #机器人与障碍物之间最小的期望间隔距离
-      inflation_dist: 0.6                         #障碍物周围的缓冲区，用于增加安全裕度。此缓冲区内具有非零的惩罚代价
-      dynamic_obstacle_inflation_dist: 0.7        #具有非零惩罚成本的动态障碍物预测位置周围的缓冲区（应大于min_obstacle_dist才能生效)
+      min_obstacle_dist: 0.20                     #机器人与障碍物之间最小的期望间隔距离
+      inflation_dist: 0.35                        #障碍物周围的缓冲区，用于增加安全裕度。此缓冲区内具有非零的惩罚代价
+      dynamic_obstacle_inflation_dist: 0.45       #具有非零惩罚成本的动态障碍物预测位置周围的缓冲区（应大于min_obstacle_dist才能生效)
       include_dynamic_obstacles: True             #预测动态障碍物周围的缓冲区，用于增加安全裕度。此缓冲区内具有非零的惩罚代价
       include_costmap_obstacles: True             #是否直接考虑代价地图中的障碍物 (如果没有单独的聚类和检测功能，则需要此选项)
       legacy_obstacle_association: False          #是否严格遵循局部规划出来的路径。如果为真，则使用旧的关联策略 (为每个障碍物找到最近的 TEB 姿势)，否则使用新的关联策略 (为每个 TEB 姿势仅找到“相关”障碍物)
@@ -209,11 +209,11 @@ controller_server:
       weight_acc_lim_x: 1.0                   #满足最大允许平移加速度的权重
       weight_acc_lim_y: 1.0                   #满足最大允许横移加速度的权重 (仅用于全向移动机器人)
       weight_acc_lim_theta: 1.0               #满足最大允许角加速度的权重
-      weight_kinematics_nh: 0.0               #满足非全向运动学约束的权重
-      weight_kinematics_forward_drive: 0.0    #强制机器人仅选择向前运动方向的权重 (仅用于差分驱动机器人)
+      weight_kinematics_nh: 30.0              #满足非全向运动学约束的权重
+      weight_kinematics_forward_drive: 15.0   #强制机器人仅选择向前运动方向的权重 (仅用于差分驱动机器人)
       weight_kinematics_turning_radius: 0.1   #强制最小转弯半径（小车型机器人）的优化权重
-      weight_optimaltime: 0.1                 #优化轨迹并尽量缩短运动时间的权重，确保在规定的时间内到达目标
-      weight_shortest_path: 0.0               #倾向于选择更短的路径，路径可能更加弯曲或不平坦
+      weight_optimaltime: 0.3                 #优化轨迹并尽量缩短运动时间的权重，确保在规定的时间内到达目标
+      weight_shortest_path: 0.2               #倾向于选择更短的路径，路径可能更加弯曲或不平坦
       weight_obstacle: 100.0                  #与障碍物保持最小距离的权重
       weight_inflation: 0.2                   #优化轨迹并尽量避免膨胀区域的权重 (权重应设置较小)
       weight_dynamic_obstacle: 10.0           #与动态障碍物保持最小距离的权重
@@ -250,7 +250,7 @@ controller_server:
       #当规划器检测到系统异常，允许缩小时域规划范围,TEB将以更近的点作为规划目标，尝试重新规划出可行路径;
       shrink_horizon_backup: True
       shrink_horizon_min_duration: 10.0         #如果检测到不可行的轨迹，激活缩小的水平线后备模式，本参数为其最短持续时间。
-      oscillation_recovery: True                #尝试检测和解决振荡
+      oscillation_recovery: False               #尝试检测和解决振荡
       oscillation_v_eps: 0.1                    #(0,1)内的 normalized 线速度的平均值的阈值，判断机器人是否运动异常
       oscillation_omega_eps: 0.1                #(0,1)内的 normalized 角速度的平均值，判断机器人是否运动异常
       oscillation_recovery_min_duration: 10.0   #在这个时间内，是否再次发生FailureDetector检测的振荡
@@ -262,7 +262,7 @@ local_costmap:
       update_frequency: 20.0
       publish_frequency: 10.0
       global_frame: map
-      robot_base_frame: base_link_fake
+      robot_base_frame: base_link
       use_sim_time: False
       rolling_window: true
       width: 5
@@ -286,8 +286,8 @@ local_costmap:
           data_type: "LaserScan"
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 5.0
-        inflation_radius: 0.6
+        cost_scaling_factor: 6.0
+        inflation_radius: 0.35
       always_send_full_costmap: true
 
 global_costmap:
@@ -296,7 +296,7 @@ global_costmap:
       update_frequency: 5.0
       publish_frequency: 2.0
       global_frame: map
-      robot_base_frame: base_link_fake
+      robot_base_frame: base_link
       use_sim_time: False
       footprint: "[[0.3426,0.285],[0.3426,-0.285],[-0.3426,-0.285],[-0.3426,0.285]]"
       resolution: 0.04
@@ -353,7 +353,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 8.0
-        inflation_radius: 0.7
+        inflation_radius: 0.45
       always_send_full_costmap: True
 
 map_saver:
@@ -386,7 +386,7 @@ recoveries_server:
     backup:
       plugin: "nav2_recoveries/BackUp"
     global_frame: odom
-    robot_base_frame: base_link_fake
+    robot_base_frame: base_link
     transform_timeout: 0.1
     use_sim_time: False
     simulate_ahead_time: 1.0
