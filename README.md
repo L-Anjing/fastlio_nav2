@@ -1,8 +1,8 @@
 # fastlio_nav2（实车建图与导航）
 
-本仓库当前定位为“实车链路优先”（Livox Mid360 + FAST_LIO/Point_LIO + Nav2 + TEB），用于：
+本仓库当前定位为“实车链路优先”（Livox Mid360 + FAST_LIO2 + Nav2 + TEB），用于：
 
-- 边建图边导航（`mode:=mapping`）
+- 边建图（边导航，功能待完善）（`mode:=mapping`）
 - 已有全局地图导航（`mode:=nav`）
 
 主入口：`src/nav_bringup/launch/bringup_real.launch.py`
@@ -18,9 +18,9 @@
 ### 1.2 编译
 
 ```bash
-git clone --recursive https://github.com/L-Anjing/fastlio_nav2.git
+git clone https://github.com/L-Anjing/fastlio_nav2.git
 cd fastlio_nav2
-rosdep install -r --from-paths src --ignore-src --rosdistro $ROS_DISTRO -y
+rosdep install -r --from-paths src --ignore-src --rosdistro humble -y
 ./build.sh
 source install/setup.bash
 ```
@@ -65,8 +65,17 @@ nav_rviz:=False
 建图完成后保存：
 
 ```bash
-ros2 service call /slam_toolbox/save_map slam_toolbox/srv/SaveMap "{name: {data: 'YOUR_WORLD_NAME'}}"
-./save_pcd.sh
+./save_grid_map.sh //slam_toolbox
+./save_pcd.sh //暂不需要
+```
+
+点云保存名称修改`src/nav_bringup/config/reality/fastlio_mid360_real.yaml`下
+```
+        pcd_save:
+            pcd_save_en: true
+            interval: 100                 # how many LiDAR frames saved in each pcd file; 
+                                        # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.
+            file_name: "scans.pcd"      # overwrite the same file periodically instead of creating scans_*.pcd
 ```
 
 ### 3.2 导航（仅 `mode:=nav`，主推 slam_toolbox 定位）
