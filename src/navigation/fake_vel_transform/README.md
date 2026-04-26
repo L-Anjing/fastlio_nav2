@@ -1,29 +1,35 @@
 # fake_vel_transform
 
-该包用于实现雷达和云台共用的 yaw 轴时的兼容性，即使云台处于旋转扫描状态，速度变换后，仍然可以实现较稳定的轨迹跟踪效果。
+`fake_vel_transform` 是本工程的底盘速度出口适配节点。
 
-## 实现方式
+当前实车链路中，Nav2 使用 `robot_base_frame: base_link`，因此节点默认不再做速度坐标旋转，而是将 Nav2 平滑后的 `/cmd_vel` 透传为底盘侧接口 `/cmd_vel_chassis`。
 
-创建 XYZ 轴基于 `base_link`, RPY 轴基于局部路径规划朝向的 `base_link_fake` 坐标系，使得 nav2 局部规划器能够将机器人的方向视为与当前路径规划方向一致。
+当前主链路为 FAST-LIO-SAM-G + Nav2 三阶段导航：`staged_navigate_to_pose` 和 TEB 都输出到 `/cmd_vel_nav`，`velocity_smoother` 平滑后发布 `/cmd_vel`，本节点只负责把 `/cmd_vel` 送到底盘侧。
 
-nav2 发布的速度也是基于 `base_link_fake` 坐标系的，通过 tf2 将速度转换到 `base_link` 坐标系，使机器人能够正常运动。在仿真中表现即底盘小陀螺时仍能跟随轨迹。
+## 输入
 
-电控端执行底盘控制命令时，机器人运动正方向为云台枪管朝向。
+- `/cmd_vel`：Nav2 / velocity_smoother 输出的 `geometry_msgs/msg/Twist`
+- `/local_plan`：局部路径，仅用于保留历史 `base_link_fake` 计算逻辑
 
-## fake_vel_transform_node
+## 输出
 
-订阅：
+- `/cmd_vel_chassis`：给底盘驱动订阅的最终速度指令
+- `base_link -> base_link_fake`：保留发布，用于兼容旧 RViz / 调试链路
 
-- nav2 发布的基于 base_link_fake 坐标系的速度指令 `/cmd_vel`
-- nav2 controller 发布的局部路径朝向 `/local_path`
-- `odom` 到 `base_link` 的 tf 变换
+## 当前行为
 
-发布：
+- `linear.x`、`linear.y`、`angular.z` 原样透传；当前 Nav2 配置已关闭 `linear.y`，因为前置相机需要机器人 `+x` 面向轨迹。
+- `spin_speed` 当前在 `nav_bringup` 中设为 `0.0`。
+- 若未来重新启用小陀螺 / `base_link_fake` 导航模式，需要同步恢复速度旋转逻辑和 Nav2 的 `robot_base_frame`。
 
-- 转换到 base_link 坐标系的速度 `/cmd_vel_chassis`
+## 调试提示
 
-静态参数：
+如果机器人不动或方向异常，按顺序检查：
 
-- 底盘固定旋转速度 `spin_speed`
+```bash
+ros2 topic echo /cmd_vel_nav
+ros2 topic echo /cmd_vel
+ros2 topic echo /cmd_vel_chassis
+```
 
-  搭配电控固定小陀螺速度，将 spin_speed 设为负，可实现移动时小陀螺减慢。
+如果 `/cmd_vel` 有速度而 `/cmd_vel_chassis` 没有，优先检查本节点是否启动；如果 `/cmd_vel_chassis` 有速度而底盘不动，优先检查 AgileX CAN/驱动。

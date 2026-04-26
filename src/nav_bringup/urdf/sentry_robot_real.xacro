@@ -24,7 +24,7 @@
       <geometry>
         <box size="$(arg body_size)"/>
       </geometry>
-      <origin rpy="0 0 ${PI/2}" xyz="0 0 $(arg body_center_z)"/>
+      <origin rpy="0 0 0" xyz="0 0 $(arg body_center_z)"/>
       <material name="white">
         <color rgba="1 1 1 1"/>
       </material>
@@ -33,7 +33,7 @@
       <geometry>
         <box size="$(arg body_size)"/>
       </geometry>
-      <origin rpy="0 0 ${PI/2}" xyz="0 0 $(arg body_center_z)"/>
+      <origin rpy="0 0 0" xyz="0 0 $(arg body_center_z)"/>
     </collision>
     <xacro:default_inertial mass="8.2"/>
   </link>

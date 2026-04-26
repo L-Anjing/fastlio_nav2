@@ -56,6 +56,14 @@ def generate_launch_description():
     #              https://github.com/ros2/launch_ros/issues/56
     remappings = [('/tf', 'tf'),
                   ('/tf_static', 'tf_static')]
+    navigate_to_pose_raw_remappings = [
+        ('/navigate_to_pose', '/navigate_to_pose_raw'),
+        ('/navigate_to_pose/_action/send_goal', '/navigate_to_pose_raw/_action/send_goal'),
+        ('/navigate_to_pose/_action/get_result', '/navigate_to_pose_raw/_action/get_result'),
+        ('/navigate_to_pose/_action/cancel_goal', '/navigate_to_pose_raw/_action/cancel_goal'),
+        ('/navigate_to_pose/_action/feedback', '/navigate_to_pose_raw/_action/feedback'),
+        ('/navigate_to_pose/_action/status', '/navigate_to_pose_raw/_action/status'),
+    ]
 
     # Create our own temporary YAML files that include substitutions
     param_substitutions = {
@@ -157,7 +165,7 @@ def generate_launch_description():
                 respawn_delay=2.0,
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
-                remappings=remappings),
+                remappings=remappings + navigate_to_pose_raw_remappings),
             Node(
                 package='nav2_waypoint_follower',
                 executable='waypoint_follower',
@@ -224,7 +232,7 @@ def generate_launch_description():
                 plugin='nav2_bt_navigator::BtNavigator',
                 name='bt_navigator',
                 parameters=[configured_params],
-                remappings=remappings),
+                remappings=remappings + navigate_to_pose_raw_remappings),
             ComposableNode(
                 package='nav2_waypoint_follower',
                 plugin='nav2_waypoint_follower::WaypointFollower',

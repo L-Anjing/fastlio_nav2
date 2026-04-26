@@ -4,7 +4,7 @@ from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, GroupAction,
-                            IncludeLaunchDescription, SetEnvironmentVariable)
+                            IncludeLaunchDescription, SetEnvironmentVariable, TimerAction)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -21,7 +21,6 @@ def generate_launch_description():
     # Create the launch configuration variables
     namespace = LaunchConfiguration('namespace')
     use_namespace = LaunchConfiguration('use_namespace')
-    map_yaml_file = LaunchConfiguration('map')
     use_sim_time = LaunchConfiguration('use_sim_time')
     params_file = LaunchConfiguration('params_file')
     autostart = LaunchConfiguration('autostart')
@@ -35,8 +34,7 @@ def generate_launch_description():
 
     # Create our own temporary YAML files that include substitutions
     param_substitutions = {
-        'use_sim_time': use_sim_time,
-        'yaml_filename': map_yaml_file}
+        'use_sim_time': use_sim_time}
 
     configured_params = RewrittenYaml(
         source_file=params_file,
@@ -56,16 +54,6 @@ def generate_launch_description():
         'use_namespace',
         default_value='false',
         description='Whether to apply a namespace to the navigation stack')
-
-    declare_use_slam_cmd = DeclareLaunchArgument(
-        'use_slam',
-        default_value='True',
-        description='Whether run a SLAM')
-
-    declare_map_yaml_cmd = DeclareLaunchArgument(
-        'map',
-        default_value= os.path.join(bringup_dir,'map', 'RMUL.yaml'),
-        description='Full path to map yaml file to load')
 
     declare_use_sim_time_cmd = DeclareLaunchArgument(
         'use_sim_time',
@@ -125,10 +113,13 @@ def generate_launch_description():
                               'use_respawn': use_respawn,
                               'container_name': 'nav2_container'}.items()),
 
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(os.path.join(launch_dir, 'rviz_launch.py')),
-            condition=IfCondition(use_nav_rviz)
-        ),
+        TimerAction(
+            period=12.0,
+            actions=[
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(os.path.join(launch_dir, 'rviz_launch.py')),
+                    condition=IfCondition(use_nav_rviz))
+            ]),
     ])
 
     # Create the launch description and populate
@@ -140,8 +131,6 @@ def generate_launch_description():
     # Declare the launch options
     ld.add_action(declare_namespace_cmd)
     ld.add_action(declare_use_namespace_cmd)
-    ld.add_action(declare_use_slam_cmd)
-    ld.add_action(declare_map_yaml_cmd)
     ld.add_action(declare_use_sim_time_cmd)
     ld.add_action(declare_params_file_cmd)
     ld.add_action(declare_autostart_cmd)

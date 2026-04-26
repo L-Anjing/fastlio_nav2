@@ -1,130 +1,275 @@
 # fastlio_nav2（实车建图与导航）
 
-本仓库当前定位为“实车链路优先”（Livox Mid360 + FAST_LIO2 + Nav2 + TEB），用于：
+本仓库当前只维护一条实车主链路：**Livox Mid360 + FAST-LIO-SAM-G + Nav2 + TEB + AgileX Ranger Mini V3**。
 
-- 边建图（边导航，功能待完善）（`mode:=mapping`）
-- 已有全局地图导航（`mode:=nav`）
+目标：
+
+- FAST-LIO-SAM-G 负责建图、定位、`/Odometry`、`/scan`、在线 `/map` 和 `map -> odom -> base_link` TF。
+- Nav2 负责全局规划、局部避障和速度控制。
+- `staged_navigate_to_pose` 负责三阶段导航：起步朝向、TEB 行驶、最终朝向。
+- AgileX 驱动只消费 `/cmd_vel_chassis` 控制底盘。
 
 主入口：`src/nav_bringup/launch/bringup_real.launch.py`
 
-## 1. 环境与编译
+## 1. 当前主链路
 
-### 1.1 软件环境
+### 1.1 FAST-LIO-SAM-G 输出
+
+FAST-LIO-SAM-G 位于：
+
+```text
+src/localization/FAST-SLAM-G
+```
+
+ROS 2 包名仍为：
+
+```text
+fast_lio_sam
+```
+
+主用配置：
+
+```text
+src/nav_bringup/config/reality/fast_lio_sam_gridmap_mid360_real.yaml
+```
+
+当前主链路依赖它输出：
+
+- `/Odometry`
+- `/OdometryHighFreq`
+- `/scan`
+- `/map`
+- `lio_sam/mapping/cloud_global_2d`
+- `map -> odom -> base_link`
+
+### 1.2 Nav2 三阶段导航
+
+RViz 发出的 `/navigate_to_pose` 不直接给 Nav2，而是先进入：
+
+```text
+src/nav_bringup/scripts/staged_navigate_to_pose.py
+```
+
+当前 action wiring：
+
+```text
+/navigate_to_pose      -> staged_navigate_to_pose
+/navigate_to_pose_raw  -> bt_navigator
+```
+
+三阶段行为：
+
+1. **start yaw**：先原地旋转，让机器人 `+x` / 前置相机朝向轨迹方向。
+2. **path stage**：发送位置目标给 `/navigate_to_pose_raw`，由 Nav2 + TEB 行驶到目标位置。
+3. **final yaw**：到达位置后，staged 节点独立发布 `/cmd_vel_nav`，调整到 RViz 目标方向。
+
+因为前置相机必须朝向 `+x`，当前配置已关闭 `linear.y` 横移：
+
+```yaml
+max_vel_y: 0.0
+acc_lim_y: 0.0
+```
+
+### 1.3 速度链路
+
+```text
+TEB / staged final yaw
+  -> /cmd_vel_nav
+  -> velocity_smoother
+  -> /cmd_vel
+  -> fake_vel_transform
+  -> /cmd_vel_chassis
+  -> ranger_base_node
+```
+
+`ranger_base_node` 由 `agilex_ws` 提供，当前 launch 传入：
+
+```text
+publish_odom_tf:=false
+odom_topic_name:=/chassis/odom
+cmd_vel_topic_name:=/cmd_vel_chassis
+```
+
+这样底盘不抢 FAST-LIO-SAM-G 的 `map/odom/base_link` TF。
+
+## 2. 编译与环境
+
+### 2.1 软件环境
 
 - Ubuntu 22.04
 - ROS 2 Humble
-- colcon / rosdep
+- Livox SDK2 / livox_ros_driver2
+- GTSAM
+- AgileX Ranger ROS2 workspace：`~/workspace/agilex_ws`
+- 本仓库：`~/workspace/fastlio_nav2`
 
-### 1.2 编译
+### 2.2 编译
 
 ```bash
-git clone https://github.com/L-Anjing/fastlio_nav2.git
-cd fastlio_nav2
+cd ~/workspace/fastlio_nav2
 rosdep install -r --from-paths src --ignore-src --rosdistro humble -y
-./build.sh
-source install/setup.bash
+colcon build --symlink-install
 ```
 
-### 1.3 Livox SDK2（若本机未安装）
+只改 bringup / navigation 配置时可以快速编译：
 
 ```bash
-sudo apt update
-sudo apt install -y cmake build-essential
-
-git clone https://github.com/Livox-SDK/Livox-SDK2.git
-cd Livox-SDK2
-mkdir build && cd build
-cmake .. && make -j
-sudo make install
+colcon build --packages-select nav_bringup navigation --symlink-install
 ```
 
-## 2. 核心文件作用（迁移时最常改）
+### 2.3 推荐 source 顺序
 
-- `build.sh`：工作区编译。
-- `save_pcd.sh`：保存 FAST_LIO 点云地图（`.pcd`）。
-- `save_grid_map.sh`：保存 slam_toolbox 的 2D 栅格地图（`.yaml/.pgm`）。
-- `src/nav_bringup/launch/bringup_real.launch.py`：实车总启动入口，选择 `mode/lio/localization`。
-- `src/nav_bringup/config/reality/`：实车配置主目录。
-- `docs/config_single_source.md`：配置文件职责、参数说明、改哪个文件的总说明。
-- `docs/chassis_integration.md`：底盘控制对接说明。
-- `src/navigation/teb_local_planner/README.md`：TEB 控制器使用与调参说明。
-
-## 3. 推荐流程（当前主用：slam_toolbox）
-
-### 3.1 建图（slam_toolbox + fastlio）
+每个终端都按这个顺序：
 
 ```bash
-ros2 launch nav_bringup bringup_real.launch.py \
-world:=YOUR_WORLD_NAME \
-mode:=mapping \
-lio:=fastlio \
-lio_rviz:=True \
-nav_rviz:=False
+source /opt/ros/humble/setup.bash
+source ~/workspace/agilex_ws/install/setup.bash
+source ~/workspace/fastlio_nav2/install/setup.bash
 ```
 
-建图完成后保存：
+如果 action / topic 信息异常，先清 ROS daemon：
 
 ```bash
-./save_grid_map.sh //slam_toolbox
-./save_pcd.sh //暂不需要
+ros2 daemon stop
+ros2 daemon start
 ```
 
-点云保存名称修改`src/nav_bringup/config/reality/fastlio_mid360_real.yaml`下
-```
-        pcd_save:
-            pcd_save_en: true
-            interval: 100                 # how many LiDAR frames saved in each pcd file; 
-                                        # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.
-            file_name: "scans.pcd"      # overwrite the same file periodically instead of creating scans_*.pcd
+## 3. 启动
+
+### 3.1 CAN 准备
+
+```bash
+cd ~/workspace/agilex_ws
+sudo bash src/ranger_ros2/ranger_bringup/scripts/bringup_can2usb.bash
 ```
 
-### 3.2 导航（仅 `mode:=nav`，主推 slam_toolbox 定位）
+### 3.2 建图模式
 
 ```bash
 ros2 launch nav_bringup bringup_real.launch.py \
-world:=YOUR_WORLD_NAME \
-mode:=nav \
-lio:=fastlio \
-localization:=slam_toolbox \
-lio_rviz:=False \
-nav_rviz:=True
+  mode:=mapping \
+  lio:=fastlio_sam \
+  lio_rviz:=True \
+  nav_rviz:=False
 ```
 
-### 3.3 `localization` 选项（仅 `mode:=nav` 有效）
-
-当前建议优先使用：
-
-- `slam_toolbox`
-
-另外两种可选（保留，后续可继续调优）：
-
-- `amcl`（使用 `map/*.yaml + *.pgm`）
-- `icp`（使用 `PCD/*.pcd`）
-
-## 4. 坐标系与控制链注意事项
-
-当前工程里，Nav2 使用：
-
-- `robot_base_frame: base_link`
-
-并由 `fake_vel_transform` 参与控制链路。如果你后续改动基坐标系，必须同步修改：
-
-- `bt_navigator.robot_base_frame`
-- `local_costmap.robot_base_frame`
-- `global_costmap.robot_base_frame`
-- `recoveries_server.robot_base_frame`
-- 以及底盘控制节点对应的话题/TF 对齐
-
-## 5. 常用命令
+保存当前在线 `/map`：
 
 ```bash
-./build.sh
-./save_pcd.sh
-./save_grid_map.sh
+cd ~/workspace/fastlio_nav2
+./save_grid_map.sh YOUR_WORLD_NAME
 ```
 
-## 6. 配置与对接文档
+### 3.3 导航模式（推荐）
 
-- 配置文件职责、参数说明、改哪个文件： [docs/config_single_source.md](docs/config_single_source.md)
-- 底盘控制对接： [docs/chassis_integration.md](docs/chassis_integration.md)
-- TEB 详细使用和排错： [src/navigation/teb_local_planner/README.md](src/navigation/teb_local_planner/README.md)
+```bash
+ros2 launch nav_bringup bringup_real.launch.py \
+  mode:=fastlio_nav \
+  lio:=fastlio_sam \
+  launch_chassis:=True \
+  chassis_port_name:=can0 \
+  chassis_robot_model:=ranger_mini_v3 \
+  lio_rviz:=False \
+  nav_rviz:=True
+```
+
+说明：
+
+- `lio_rviz:=False`：减少一个 RViz，降低 CPU/GPU 压力。
+- `nav_rviz:=True`：打开 Nav2 RViz。当前 Nav2 RViz 已延迟启动，给 FAST-LIO-SAM-G 先发布地图。
+- `launch_chassis:=False`：只测试导航链路，不控制真实底盘。
+
+## 4. 关键配置
+
+### 4.1 车体与雷达测量
+
+```text
+src/nav_bringup/config/reality/measurement_params_real.yaml
+```
+
+当前测量值：
+
+```yaml
+vehicle_body:
+  size: [0.751, 0.500, 0.200]
+  nav2_safety_margin: 0.05
+base_link_to_livox:
+  xyz: [0.250, 0.056, 0.405]
+  rpy: [0.0, 0.0, 0.0]
+```
+
+`nav2_safety_margin` 会在 launch 时外扩 Nav2/TEB footprint。
+
+### 4.2 Nav2 / TEB
+
+```text
+src/nav_bringup/config/reality/nav2_params_real.yaml
+```
+
+当前重点：
+
+- `xy_goal_tolerance: 0.08`：位置到达阈值 8 cm。
+- `yaw_goal_tolerance: 6.28`：Nav2 path stage 不管最终朝向，最终朝向由 staged 节点处理。
+- `max_vel_y: 0.0`：关闭横移，保证前置相机 `+x` 面向轨迹。
+- `failure_tolerance: 5.0`：避免 TEB 短暂不可行时立刻 abort。
+- global costmap 当前只用 `static_layer + inflation_layer`，已关闭重的 STVL 全局层来加速启动。
+- local costmap 订阅 `/scan` 做近场障碍物避障。
+
+### 4.3 FAST-LIO-SAM-G map / scan
+
+```text
+src/nav_bringup/config/reality/fast_lio_sam_gridmap_mid360_real.yaml
+```
+
+当前关注：
+
+- `frontend_scan.topic`：launch 覆盖为 `/scan`。
+- `frontend_scan.mask_enabled`：用于屏蔽雷达后方钢板方向。
+- `occupancy_map.input_topic`: `lio_sam/mapping/cloud_global_2d`
+- `occupancy_map.output_topic`: `/map`
+
+## 5. 快速检查命令
+
+### 5.1 TF 重复检查
+
+```bash
+ros2 topic info /tf -v
+ros2 topic info /tf_static -v
+```
+
+如果看到同名节点重复出现，例如多个 `robot_state_publisher`、`fast_lio_gridmap`、`ranger_base_node`，先杀掉旧进程：
+
+```bash
+pkill -f ros2
+pkill -f component_container
+pkill -f rviz2
+pkill -f staged_navigate
+pkill -f fastlio_mapping
+pkill -f robot_state_publisher
+```
+
+### 5.3 速度链路检查
+
+```bash
+ros2 topic echo /cmd_vel_nav
+ros2 topic echo /cmd_vel
+ros2 topic echo /cmd_vel_chassis
+```
+
+三阶段 final yaw 时应看到 `angular.z` 从 `/cmd_vel_nav` 传到 `/cmd_vel_chassis`。
+
+### 5.4 地图检查
+
+```bash
+ros2 topic hz /map
+ros2 topic echo /map --once | grep -E 'width|height|resolution'
+```
+
+RViz 中 `100 x 100` 通常是 local costmap，不代表 `/map` 消失。
+
+
+## 6. 文档索引
+
+- `docs/config_single_source.md`：所有实车参数应该改哪里。
+- `docs/chassis_integration.md`：AgileX 底盘接入与速度链路。
+- `docs/remaining_issues.md`：当前未解决问题与明天继续工作的检查清单。

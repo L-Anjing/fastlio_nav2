@@ -2,6 +2,14 @@
 
 本文只针对本仓库（`fastlio_nav2`）的实车配置，不讨论通用示例。
 
+实车配置统一从 `src/nav_bringup/config/reality/` 维护。FAST-LIO-SAM-G 在 `reality` 中只保留主用 `fast_lio_sam_gridmap_mid360_real.yaml`；TEB 相关参数只改 `nav2_params_real.yaml` 和由 `measurement_params_real.yaml` 自动同步的车体尺寸。
+
+当前唯一维护的导航链路是 FAST-LIO-SAM-G + Nav2：FAST-LIO-SAM-G 提供 `/Odometry`、`/scan`、实时 `/map` 和 `map -> odom -> base_link`，TEB 只负责局部轨迹优化和速度输出。
+
+当前控制策略已经改为三阶段：起步朝向和最终朝向由 `staged_navigate_to_pose` 独立控制，TEB 只负责中间路径阶段。不要再用 `nav2_rotation_shim_controller` 包住 TEB，否则容易和 staged start/final yaw 打架。
+
+前置相机安装在机器人 `+x` 方向，因此当前配置关闭 `linear.y` 横移，让 `+x` 尽量朝向轨迹。虽然底盘具备全向能力，但当前任务不使用横移导航。
+
 ## 1. TEB 在本工程里的接入位置
 
 - 主配置文件：`src/nav_bringup/config/reality/nav2_params_real.yaml`
@@ -14,6 +22,14 @@
 - `FollowPath`（TEB）负责局部轨迹优化与速度输出
 - 最终通过本工程控制链路下发到底盘
 
+当前不要改回：
+
+```yaml
+plugin: nav2_rotation_shim_controller::RotationShimController
+```
+
+如果需要调整起步/最终朝向，改 `src/nav_bringup/scripts/staged_navigate_to_pose.py` 或 `bringup_real.launch.py` 中 staged 参数。
+
 ## 2. 使用前必须满足的 4 个条件
 
 ### 2.1 TF 链必须连续
@@ -23,15 +39,14 @@
 - `map -> odom`
 - `odom -> base_link`
 - `base_link -> livox_frame`
-- `base_link -> base_link_fake`
 
-注意：本工程 Nav2 参考基座是 `base_link_fake`，不是直接 `base_link`。
+注意：本工程当前 Nav2 参考基座是 `base_link`。`base_link_fake` 只作为旧调试/小陀螺兼容 TF 保留，默认不参与 Nav2 控制。
 
 ### 2.2 障碍物输入要正常
 
 TEB 主要通过 costmap 感知障碍，至少要保证：
 
-- `/scan` 连续（由点云转激光）
+- `/scan` 连续（由 `fast_lio_sam` 内置前端扫描发布）
 - `/segmentation/obstacle` 连续（3D 障碍点云）
 
 若这两个输入缺失，TEB 常见表现是“看起来能规划但实车直冲/急停/贴障”。
@@ -157,22 +172,22 @@ footprint_model:
 
 用于抑制原地抖动、反复切换局部轨迹等问题。
 
-## 5. 本工程特有注意点：base_link_fake
+## 5. 本工程特有注意点：base_link
 
-`nav2_params_real.yaml` 中以下组件都使用 `base_link_fake`：
+`nav2_params_real.yaml` 中以下组件都使用 `base_link`：
 
 - `bt_navigator.robot_base_frame`
 - `local_costmap.robot_base_frame`
 - `global_costmap.robot_base_frame`
 - `recoveries_server.robot_base_frame`
 
-如果你改回 `base_link`，必须整体联动修改；只改一处会导致 TF 不一致和控制异常。
+如果你想重新启用 `base_link_fake` 导航模式，必须整体联动修改这些字段，并同步恢复 `fake_vel_transform` 中的速度坐标旋转逻辑；只改一处会导致 TF 不一致和控制异常。
 
 ## 6. 快速自检命令
 
 ```bash
 # 1) 检查 TF
-ros2 run tf2_ros tf2_echo map base_link_fake
+ros2 run tf2_ros tf2_echo map base_link
 
 # 2) 检查障碍输入
 ros2 topic hz /scan
@@ -205,12 +220,12 @@ ros2 topic hz /cmd_vel
 
 优先检查：
 
-- `base_link_fake` 相关 TF 是否持续更新
+- `map -> odom -> base_link` TF 是否持续更新
 - 底盘控制节点是否正确消费速度指令话题
-- `localization` 与 `mode:=nav` 是否匹配
+- FAST-LIO-SAM-G 输出 `/Odometry`、`/scan` 和 `map -> odom -> base_link` 是否正常
 
 ## 8. 关联文档
 
-- 仓库主说明：`/home/pi/workspace2/fastlio_nav2/README.md`
+- 仓库主说明：`README.md`
 - 实车启动：`src/nav_bringup/launch/bringup_real.launch.py`
 - Nav2 参数：`src/nav_bringup/config/reality/nav2_params_real.yaml`

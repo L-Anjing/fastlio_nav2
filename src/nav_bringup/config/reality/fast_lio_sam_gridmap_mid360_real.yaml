@@ -1,0 +1,133 @@
+common:
+    lid_topic:  "/livox/lidar"
+    imu_topic:  "/livox/imu"
+    time_sync_en: false         # ONLY turn on when external time synchronization is really not possible
+    time_offset_lidar_to_imu: 0.0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
+                                # This param will take effect no matter what time_sync_en is. So if the time offset is not known exactly, please set as 0.0
+
+preprocess:
+    lidar_type: 1                # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR,
+    scan_line: 4
+    blind: 0.5
+
+mapping:
+    acc_cov: 0.1
+    gyr_cov: 0.1
+    b_acc_cov: 0.0001
+    b_gyr_cov: 0.0001
+    fov_degree:    360.0
+    det_range:     100.0
+    extrinsic_est_en:  false      # true: enable the online estimation of IMU-LiDAR extrinsic
+    extrinsic_R: [0.999996, -0.00129,  -0.00230,
+                0.00129,   0.999999, -0.00130,
+                0.00230,   0.00130,   0.999996]
+
+    extrinsic_T: [-0.009673, -0.037003, 0.047590]
+
+lio_sam:
+
+  # Frames
+  lidarFrame: "lidar"
+  baselinkFrame: "base_link"
+  highFrequencyBaselinkFrame: "base_link_hf"
+  odometryFrame: "odom"
+  mapFrame: "map"
+  publishMapToOdomTf: true
+
+  # CPU Params
+  numberOfCores: 4                              # number of cores for mapping optimization
+  mappingProcessInterval: 0.15                  # seconds, regulate mapping frequency
+
+  # Surrounding map
+  surroundingkeyframeAddingDistThreshold: 0.5   # meters, regulate keyframe adding threshold
+  surroundingkeyframeAddingAngleThreshold: 0.1  # radians, regulate keyframe adding threshold
+  surroundingKeyframeDensity: 2.0               # meters, downsample surrounding keyframe poses
+  surroundingKeyframeSearchRadius: 50.0         # meters, within n meters scan-to-map optimization (when loop closure disabled)
+
+  # Loop closure
+  loopClosureEnableFlag: true
+  loopClosureFrequency: 1.0                     # Hz, regulate loop closure constraint add frequency
+  surroundingKeyframeSize: 50                   # submap size (when loop closure enabled)
+  historyKeyframeSearchRadius: 15.0             # meters, key frame that is within n meters from current pose will be considerd for loop closure
+  historyKeyframeSearchTimeDiff: 30.0           # seconds, key frame that is n seconds older will be considered for loop closure
+  historyKeyframeSearchNum: 25                  # number of hostory key frames will be fused into a submap for loop closure
+  historyKeyframeFitnessScore: 0.3              # loop-closure fitness threshold, smaller means stricter alignment
+
+  # Visualization
+  globalMapVisualizationSearchRadius: 1000.0    # meters, global map visualization radius
+  globalMapVisualizationPoseDensity: 10.0       # meters, global map visualization keyframe density
+  globalMapVisualizationLeafSize: 1.0           # meters, global map visualization cloud density
+
+publish:
+    path_en:  false
+    use_lidar_frame: true      # false: publish IMU/base_link pose; true: publish LiDAR pose. TF chain stays unchanged.
+    scan_publish_en:  true       # false: close all the point cloud output
+    dense_publish_en: true       # false: low down the points number in a global-frame point clouds scan.
+    scan_bodyframe_pub_en: true  # true: output the point cloud scans in IMU-body-frame
+    frontend_scan_pub_en: true   # true: publish realtime frontend scan on a separate topic
+
+frontend_scan:
+    topic: "/frontend_scan"
+    # Mask the rear sector where the LiDAR sees the steel mounting plate.
+    # Angles are in the published scan frame: +x forward, +y left, -x rear.
+    # min > max means the mask wraps across +pi/-pi: [135°, 180°] U [-180°, -135°].
+    mask_enabled: true
+    mask_angle_min: 2.35619    # +135 deg
+    mask_angle_max: -2.35619   # -135 deg
+
+res_save:
+    res_save_en: false
+    interval: -1                 # how many LiDAR frames saved in each pcd file;
+                                # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.
+
+zupt:
+    use_zupt: false                    # enable adaptive zero velocity update
+    zupt_acc_var_threshold:  0.0001   # (m/s²)² per-axis acc variance → full-confidence threshold
+    zupt_gyro_var_threshold: 0.00001  # (rad/s)² per-axis gyro variance → full-confidence threshold
+
+    # Static confidence: exp(-3 * max_normalized_variance), in [0,1]
+    zupt_confidence_min: 0.05         # below this no ZUPT is applied
+
+    # Dynamic ZUPT weight: R = clamp(zupt_r_min / eff_confidence, zupt_r_max)
+    zupt_r_min: 1.0e-5                # ZUPT measurement noise at full confidence
+    zupt_r_max: 1.0                   # ZUPT measurement noise cap (≈ no constraint)
+
+    # Dynamic LiDAR weight: lidar_cov = LASER_POINT_COV * (1 + scale*conf) * max(1, residual/ref)
+    lidar_cov_static_scale: 5.0       # LiDAR cov multiplier at full confidence
+    lidar_residual_ref: 0.05          # (m) reference residual; above this LiDAR trust reduces
+
+    # Covariance inflation (lock-in prevention)
+    cov_inflate_start: 200            # IMU steps of continuous static before inflation kicks in
+    cov_inflate_pos:   1.0e-7         # per-step position covariance inflation
+    cov_inflate_rot:   1.0e-8         # per-step rotation covariance inflation
+
+occupancy_map:
+    enabled: true
+    input_type: "pointcloud"
+    input_topic: "lio_sam/mapping/cloud_global_2d"
+    output_topic: "/map"
+    map_frame: "map"
+    resolution: 0.05
+    padding: 5.0
+    obstacle_min_height: -0.5
+    obstacle_max_height: 0.3
+    min_points_per_cell: 1
+    fill_free_space: true
+
+pointcloud_to_laserscan:
+    enabled: false
+    input_topic: "lio_sam/mapping/cloud_global_2d"
+    output_topic: "/scan"
+    target_frame: "map"
+    transform_tolerance: 0.05
+    slice_enable: true
+    min_height: -0.5
+    max_height: 0.3
+    angle_min: -3.14159
+    angle_max: 3.14159
+    angle_increment: 0.00436
+    scan_time: 0.1
+    range_min: 0.1
+    range_max: 100.0
+    use_inf: true
+    inf_epsilon: 1.0
