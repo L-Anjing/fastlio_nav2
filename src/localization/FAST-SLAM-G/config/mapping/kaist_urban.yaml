@@ -1,0 +1,24 @@
+common:
+    lid_topic:  "/ns1/velodyne_points"
+    imu_topic:  "/imu/data_raw"
+    time_sync_en: false         # ONLY turn on when external time synchronization is really not possible
+    time_offset_lidar_to_imu: 0.0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
+                                # This param will take effect no matter what time_sync_en is. So if the time offset is not known exactly, please set as 0.0
+
+preprocess:
+    lidar_type: 7 # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR, 4 for RoboSense LiDAR, 7 for KAIST Dataset
+    scan_line: 16
+    blind: 1
+
+mapping:
+    acc_cov: 0.346
+    gyr_cov: 3.046e-4
+    b_acc_cov: 1e-6
+    b_gyr_cov: 1e-10
+    fov_degree:    360.0
+    det_range:     100.0
+    extrinsic_est_en:  false      # true: enable the online estimation of IMU-LiDAR extrinsic
+    extrinsic_T: [ -0.333596, -0.373928, 1.94377 ] # LiDAR position in the IMU coordinate frame
+    extrinsic_R: [ -0.514521, 0.701075, -0.493723, # LiDAR rotation in the IMU coordinate frame
+                  -0.492472, -0.712956, -0.499164,
+                  -0.701954, -0.0136853, 0.712091 ]
