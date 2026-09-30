@@ -3,6 +3,7 @@ build/
 install/
 log/
 
+src/fast_lio/PCD/
 .devcontainer
 .history
 .vscode/

@@ -1,0 +1,94 @@
+pcd_to_occupancy_map:
+  ros__parameters:
+    # 栅格分辨率（米）
+    resolution: 0.05
+    # 相对每个栅格局部行驶表面的障碍高度范围。这样高平台、坡面和台阶踏面
+    # 不会因绝对 z 较高而被误判为障碍。
+    z_min: 0.15
+    z_max: 1.0
+    # 一个栅格里至少这么多点才算占据
+    min_points_per_cell: 1
+    # true: 没观测过的格子标 unknown(-1，灰色)，不当作可通行
+    # false: 边界框内一律当空闲(0，白色)
+    mark_unknown: true
+    # 栅格图所在坐标系
+    frame_id: "map"
+    # 发布话题
+    occupancy_topic: "/map"
+    # 非空时把结果存成 <prefix>.pgm 和 <prefix>.yaml
+    save_prefix: ""
+
+    # 从同一张先验 PCD 自动发布 /terrain/type 和 /terrain/direction。
+    auto_terrain: true
+    terrain_type_topic: "/terrain/type"
+    terrain_direction_topic: "/terrain/direction"
+    # 仅供 RViz 观察：坡道/台阶逐格导出的彩色点云（坡道=琥珀，台阶=洋红）。
+    # /terrain/type 的 0..3 用 RViz 的 Map 显示无法分色，所以额外给这一路。
+    terrain_cloud_topic: "/terrain/colored"
+    # 比赛场地行驶表面的绝对 z 范围：地面 0m、L1 0.6m、L2 0.9m。
+    surface_z_min: -0.30
+    surface_z_max: 1.20
+    # 连续局部平面落在该坡度范围内时识别为坡道。
+    slope_min_deg: 5.0
+    slope_max_deg: 35.0
+    slope_fit_radius: 0.20
+    slope_max_residual: 0.020
+    # 规则指定的楼梯尺寸：每级进深 0.30m、高 0.15m、总宽 1.00m。
+    stair_rise: 0.15
+    stair_tread: 0.30
+    stair_rise_tolerance: 0.025
+    stair_half_width: 0.55
+    stair_min_width: 0.65
+    # 删除面积过小的坡道/台阶误检斑点。
+    terrain_min_component_area: 0.50
+
+icp_relocalizer:
+  ros__parameters:
+    # 先验地图降采样体素（米），作为 ICP 目标点云
+    map_voxel: 0.2
+    # 实时点云降采样体素（米）
+    source_voxel: 0.2
+    # 只取这个高度带内的点参与匹配（单位米，相对 base_link）
+    z_min: -0.5
+    z_max: 1.5
+    # 实时点云话题（fast_lio 去畸变后的 body 系点云）
+    input_topic: "/cloud_registered_body"
+    # 匹配前先把点云变换到这个坐标系，ICP 结果直接就是这个坐标系的位姿
+    base_frame: "base_link"
+    # 输出位姿的 frame_id（fast_lio reloc 要求是 odom 或空）
+    odom_frame: "odom"
+    # 输出话题：fast_lio 的重定位接口
+    output_topic: "/reloc/cloud_align"
+    # 粗配准覆盖约 1.2m 初始位置误差，并搜索 4 个航向候选
+    coarse_max_correspondence_distance: 2.0
+    coarse_iterations: 40
+    yaw_search_steps: 4
+    # 精配准最近邻距离与迭代数
+    max_correspondence_distance: 0.6
+    max_iterations: 60
+    # 点云与先验地图的 ICP 均方根残差上限（米）
+    fitness_threshold: 0.5
+    # 实时点云少于这个点数不匹配
+    min_source_points: 200
+    # 先攒这么多帧融合成本地子图再匹配一次（10Hz 下 30 帧 ≈ 3 秒）
+    # 融合期间机器人要基本静止。设 1 = 用单帧（不推荐，容易滑）
+    accumulate_frames: 30
+    # 冷启动保护：启动后这段时间内不匹配，等 fast_lio 出稳定的点云（秒）
+    startup_delay: 5.0
+    # 地面机器人 roll/pitch 应接近 0，超过这个角度视为误匹配（度）
+    max_roll_pitch_deg: 10.0
+    # 相对 ICP 初值的最大净平移，超过说明匹配滑走了（米）
+    max_correction_dist: 2.0
+    # 只用当前 odom->base_link 作为初值
+    use_odom_as_initial_guess: true
+    # 初值上再叠加的偏移（米 / 弧度）
+    initial_x: 0.0
+    initial_y: 0.0
+    initial_z: 0.0
+    initial_yaw: 0.0
+    # 匹配成功后只发布一次
+    one_shot: true
+    # 两次匹配之间的最小间隔（秒）
+    cooldown: 3.0
+    # 重定位成功后发布静态 map->odom（重定位后 odom 已对齐到先验图）
+    publish_static_map_to_odom: true

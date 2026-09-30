@@ -1,0 +1,31 @@
+<!--
+  Keep the NavigateToPose action active and check global-path safety at 5 Hz.
+  planner_server incorporates the static map and the current global-costmap
+  obstacle layer on every ComputePathToPose request. TerrainMincoPlanner reuses
+  a safe cached path and only reruns semantic A* + MINCO when it becomes invalid.
+  There is deliberately no controller, recovery, or velocity output here.
+-->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <KeepRunningUntilFailure>
+      <RateController hz="10.0">
+        <!--
+          The first attempt is immediate. If a transient dynamic-costmap frame
+          reports no route, retry twice at 200 ms intervals. No unsafe cached
+          path is republished while waiting, and a persistent blockage still
+          fails the goal after about 0.4 s.
+        -->
+        <Fallback name="PlanWithTransientRetry">
+          <ComputePathToPose name="ComputePathImmediate"
+            goal="{goal}" path="{path}" planner_id="TerrainMinco"/>
+          <RetryUntilSuccessful num_attempts="2">
+            <Delay delay_msec="200">
+              <ComputePathToPose name="ComputePathRetry"
+                goal="{goal}" path="{path}" planner_id="TerrainMinco"/>
+            </Delay>
+          </RetryUntilSuccessful>
+        </Fallback>
+      </RateController>
+    </KeepRunningUntilFailure>
+  </BehaviorTree>
+</root>

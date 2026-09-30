@@ -1,0 +1,260 @@
+#pragma once
+
+#include <array>
+#include <memory>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include <Eigen/Core>
+#include <opencv2/core.hpp>
+#include <nav_msgs/msg/occupancy_grid.hpp>
+
+namespace navigation::terrain_core {
+
+class CostMap;
+class DirectionMap;
+
+class GridGeometry {
+public:
+    GridGeometry(int width, int height, double resolution, Eigen::Vector2d origin);
+    explicit GridGeometry(const nav_msgs::msg::MapMetaData& metadata);
+
+    [[nodiscard]] int width() const { return width_; }
+    [[nodiscard]] int height() const { return height_; }
+    [[nodiscard]] double resolution() const { return resolution_; }
+    [[nodiscard]] const Eigen::Vector2d& origin() const { return origin_; }
+    [[nodiscard]] Eigen::Vector2d footprint_max() const;
+
+    [[nodiscard]] bool contains_cell(const Eigen::Vector2i& cell) const;
+    // OccupancyGrid footprint is half-open: [origin, origin + size * resolution).
+    [[nodiscard]] bool contains_map_point(const Eigen::Vector2d& point_map) const;
+    [[nodiscard]] std::optional<Eigen::Vector2i> containing_cell(
+        const Eigen::Vector2d& point_map
+    ) const;
+    [[nodiscard]] Eigen::Vector2d cell_center(const Eigen::Vector2i& cell) const;
+    // Clamps to the closed geometric footprint. An upper-bound result is on the
+    // footprint boundary and therefore is not a contained map point.
+    [[nodiscard]] Eigen::Vector2d clamp_to_footprint(const Eigen::Vector2d& point_map) const;
+    // Continuous coordinates whose integer lines are cell boundaries; intended
+    // only for DDA grid-crossing geometry, not interpolation.
+    [[nodiscard]] Eigen::Vector2d map_point_to_boundary_grid(
+        const Eigen::Vector2d& point_map
+    ) const;
+    [[nodiscard]] bool same_geometry(const GridGeometry& other) const;
+
+private:
+    int width_;
+    int height_;
+    double resolution_;
+    Eigen::Vector2d origin_;
+};
+
+enum class TerrainType : uint8_t {
+    FLAT = 0,
+    OBSTACLE = 1,
+    SLOPE = 2,
+    STEP = 3,
+};
+constexpr size_t TERRAIN_LABEL_COUNT = 4;
+constexpr size_t DIRECTIONAL_TERRAIN_COUNT = TERRAIN_LABEL_COUNT - 2;
+
+struct TerrainRule {
+    bool forward_allowed = true;
+    bool backward_allowed = true;
+};
+using TerrainRuleTable = std::array<TerrainRule, TERRAIN_LABEL_COUNT>;
+
+struct SignedVelocityBounds {
+    double min;
+    double max;
+};
+
+struct SignedAngularVelocityBounds {
+    double min;
+    double max;
+};
+
+// Follow 的统一运动能力来源。MPC 将其作为 command 硬边界；速度剖面将同一边界
+// 映射到理想路径运动学，避免规划参考超出执行层能力。
+struct CommandEnvelope {
+    SignedVelocityBounds velocity;
+    SignedAngularVelocityBounds angular_velocity;
+};
+
+// 速度/角速度指令变化率在 MPC 中是硬约束，并映射为速度剖面的切向/角加速度硬约束；
+// 侧向加速度在两层中均作为软约束。
+struct CommandDynamicsLimits {
+    double velocity_rate_max;
+    double angular_velocity_rate_max;
+    double lateral_acceleration_max;
+};
+
+struct CapabilityProfile {
+    CommandEnvelope command_envelope;
+    CommandDynamicsLimits command_dynamics;
+};
+
+enum class CapabilityLevel : uint8_t {
+    LOW = 0,
+    MEDIUM = 1,
+    HIGH = 2,
+};
+
+inline CapabilityLevel capability_level_from_string(const std::string& s) {
+    if (s == "low") return CapabilityLevel::LOW;
+    if (s == "medium") return CapabilityLevel::MEDIUM;
+    if (s == "high") return CapabilityLevel::HIGH;
+    throw std::invalid_argument("Unknown capability level: \"" + s + "\" (expected low/medium/high)");
+}
+
+// 台阶穿越的共享速度窗。A* 将其视为可行性条件，MINCO 和 MPCC 将其作为软目标。
+struct TraversalVelocityWindow {
+    double min = 0.0;
+    double max = 0.0;
+};
+
+struct TraversalMode {
+    std::string name;
+    uint8_t chassis_mode = 0;
+    CapabilityLevel capability = CapabilityLevel::LOW;
+    TraversalVelocityWindow velocity_window;
+    bool requires_high_performance = false;
+    double run_up = 0.0; // 约束锚点距物理边缘的上游距离；冲量动作填 0。
+};
+
+struct DirectionalTraversalModes {
+    std::vector<TraversalMode> up;
+    std::vector<TraversalMode> down;
+};
+
+struct SelectedTerrainModes {
+    std::optional<TraversalMode> up;
+    std::optional<TraversalMode> down;
+};
+
+struct TraversalConfiguration {
+    std::array<CapabilityProfile, 3> capability_profiles;
+    std::array<DirectionalTraversalModes, DIRECTIONAL_TERRAIN_COUNT> directional_labels;
+    double high_performance_buffercap_threshold = 0.0;
+    double high_performance_supercap_threshold = 0.0;
+    double high_performance_rfr_pwr_limit_threshold = 0.0;
+};
+
+struct PerformanceState {
+    bool high_performance = false;
+};
+
+struct TerrainTraversalConstraints {
+    TerrainRuleTable rules{};
+    std::array<SelectedTerrainModes, DIRECTIONAL_TERRAIN_COUNT> selected_modes{};
+    std::shared_ptr<const CostMap> blocked_cost_layer;
+
+    [[nodiscard]] const TraversalMode* selected_mode(uint8_t label, bool is_up) const;
+};
+
+[[nodiscard]] TerrainTraversalConstraints build_terrain_traversal_constraints(
+    const DirectionMap& direction_map,
+    const TraversalConfiguration& configuration,
+    PerformanceState performance
+);
+
+class CostMap {
+public:
+    using Ptr = std::shared_ptr<CostMap>;
+    using ConstPtr = std::shared_ptr<const CostMap>;
+
+    struct CostSample {
+        double value;
+        Eigen::Vector2d gradient; // cost/m in map x/y.
+    };
+
+    explicit CostMap(GridGeometry geometry, std::vector<uint8_t> data);
+    explicit CostMap(const nav_msgs::msg::OccupancyGrid& occupancy_grid);
+
+    [[nodiscard]] CostMap merge(const CostMap& other) const;
+    [[nodiscard]] uint8_t raw_cost_at_cell(const Eigen::Vector2i& cell) const;
+    // Map-space, cell-center-aligned bilinear sampling. Border cells are
+    // replicated through the footprint edge; points outside return nullopt.
+    [[nodiscard]] std::optional<CostSample> sample_map(
+        const Eigen::Vector2d& position_map
+    ) const;
+    // Same stencil as sample_map but defined everywhere: outside the footprint the
+    // boundary value is replicated instead of reported as missing, and the
+    // gradient component normal to the exceeded edge is zero. Callers that need a
+    // penalty continuous across the footprint edge add their own distance ramp.
+    [[nodiscard]] CostSample sample_map_clamped(
+        const Eigen::Vector2d& position_map
+    ) const;
+
+    const GridGeometry geometry;
+    const std::vector<uint8_t> data;
+};
+
+class DirectionMap {
+public:
+    using Ptr = std::shared_ptr<DirectionMap>;
+    using ConstPtr = std::shared_ptr<const DirectionMap>;
+    static constexpr double TERRAIN_BODY_MAGNITUDE_THRESHOLD = 0.95; // 本体 iff raw magnitude > threshold
+
+    struct DirectionSample {
+        Eigen::Vector2d value;
+        Eigen::Matrix2d jacobian; // 1/m; columns are map x/y derivatives.
+    };
+
+    explicit DirectionMap(
+        const cv::Mat& direction_map, GridGeometry geometry
+    );
+
+    explicit DirectionMap(
+        GridGeometry geometry,
+        std::vector<Eigen::Vector2d> dir_data, std::vector<uint8_t> terrain_data
+    );
+
+private:
+    explicit DirectionMap(
+        GridGeometry geometry,
+        std::pair<std::vector<Eigen::Vector2d>, std::vector<uint8_t>> decoded
+    );
+
+    static std::pair<std::vector<Eigen::Vector2d>, std::vector<uint8_t>>
+    decode_mat(const cv::Mat& mat);
+
+public:
+    // Bilinear label weights over the sampling stencil. Weight w of label L is the
+    // summed stencil weight of the cells carrying L, so a penalty formed as
+    // sum_L w_L * f(L) is continuous across cell boundaries. dweights holds
+    // d(w_L)/d(position) in map units. Labels outside the footprint replicate the
+    // boundary cell, matching sample_map_clamped.
+    struct LabelWeights {
+        std::array<double, TERRAIN_LABEL_COUNT> weights {};
+        // Eigen fixed-size vectors are not zero-initialized by `{}`; fill explicitly.
+        std::array<Eigen::Vector2d, TERRAIN_LABEL_COUNT> dweights {};
+
+        LabelWeights() { dweights.fill(Eigen::Vector2d::Zero()); }
+    };
+
+    [[nodiscard]] Eigen::Vector2d raw_direction_at_cell(const Eigen::Vector2i& cell) const;
+    [[nodiscard]] double raw_magnitude_at_cell(const Eigen::Vector2i& cell) const;
+    [[nodiscard]] bool is_terrain_body_cell(const Eigen::Vector2i& cell) const;
+    [[nodiscard]] uint8_t terrain_label_at_cell(const Eigen::Vector2i& cell) const;
+    // Uses the same map-space centered stencil and edge replication as CostMap.
+    [[nodiscard]] std::optional<DirectionSample> sample_map(
+        const Eigen::Vector2d& position_map
+    ) const;
+    // Footprint-clamped counterparts; see CostMap::sample_map_clamped.
+    [[nodiscard]] DirectionSample sample_map_clamped(
+        const Eigen::Vector2d& position_map
+    ) const;
+    [[nodiscard]] LabelWeights label_weights_clamped(
+        const Eigen::Vector2d& position_map
+    ) const;
+
+    const GridGeometry geometry;
+    const std::vector<Eigen::Vector2d> data;
+    const std::vector<uint8_t> terrain;
+
+};
+
+} // namespace navigation::terrain_core

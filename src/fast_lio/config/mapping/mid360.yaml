@@ -1,0 +1,91 @@
+common:
+    lid_topic: "/livox/lidar"
+    imu_topic: "/livox/imu"
+    time_sync_en: false          # Only enable when reliable hardware time synchronization is unavailable.
+    time_offset_lidar_to_imu: 0.0  # LiDAR time minus IMU time, in seconds. Keep 0.0 when unknown.
+
+# FAST-LIO runtime/filter parameters.
+feature_extract_enable: false
+point_filter_num: 3
+max_iteration: 3
+
+filter_size_corner: 0.5
+filter_size_surf: 0.1
+filter_size_map: 0.1
+
+cube_side_length: 1000.0
+runtime_pos_log_enable: false
+
+# Semantic TF names published by fastlio_mapping.
+# Public odometry is expressed at the robot center; IMU and LiDAR are static child frames.
+# `lidar` 必须与 Livox 驱动消息的 frame_id 一致（launch_ROS2/msg_MID360_launch.py 里是
+# livox_frame）：这样 base_link -> livox_frame 由本节点按 robot_extrinsic 发布，
+frames:
+    odom: "odom"
+    robot: "base_link"
+    robot_hf: "base_link_hf"
+    imu: "imu_link"
+    lidar: "livox_frame"
+
+odometry:
+    zero_at_start: true          # make the first robot-center pose identity in odom
+
+preprocess:
+    lidar_type: 1                # 1: Livox CustomMsg, 2: Velodyne, 3: Ouster
+    scan_line: 4
+    scan_rate: 10                # Hz; must match the actual LiDAR publish rate
+    timestamp_unit: 2            # US; only used by standard PointCloud2 handlers
+    # Spherical blind zone centred on the LiDAR origin: a point is dropped when
+    # x^2 + y^2 + z^2 <= blind^2, in every direction.
+    blind: 0.30                  # m
+
+mapping:
+    acc_cov: 0.1
+    gyr_cov: 0.1
+    b_acc_cov: 0.0001
+    b_gyr_cov: 0.0001
+    fov_degree: 360.0
+    det_range: 100.0             # m
+    extrinsic_est_en: false      # keep false to use the official fixed MID-360 transform
+
+# Convention: T_B^A is the pose of B relative to A and maps p^B to p^A.
+# T_imu^lidar from the Livox MID-360 documentation:
+# p^lidar = R_imu^lidar * p^imu + t_imu^lidar.
+# The axes have the same directions; the IMU chip origin is offset by
+# x=11.0 mm, y=23.29 mm, z=-44.12 mm in the point-cloud coordinates.
+# FAST-LIO internally initializes T_lidar^imu = inverse(T_imu^lidar).
+sensor_extrinsic:
+    imu_in_lidar_R:   [1.0, 0.0, 0.0,
+                       0.0, 1.0, 0.0,
+                       0.0, 0.0, 1.0]
+    imu_in_lidar_T: [0.011, 0.02329, -0.04412]  # m
+
+# T_lidar^base: LiDAR pose relative to the robot-center frame.
+# p^base = R_lidar^base * p^lidar + t_lidar^base.
+# R is row-major and t is the LiDAR origin expressed in base coordinates.
+# 这组值是 base_link -> livox_frame 静态 TF 的唯一来源。
+robot_extrinsic:
+  lidar_to_robot_R: [ 1.0, 0.0, 0.0,
+                     0.0, 1.0, 0.0,
+                      0.0, 0.0, 1.0]
+  lidar_to_robot_T: [-0.1025, -0.303, 0.2634]
+
+publish:
+    path_en: true
+    scan_publish_en: true        # publish /cloud_registered
+    dense_publish_en: false       # dense world-frame cloud; consumes more CPU and bandwidth
+    scan_bodyframe_pub_en: true   # publish /cloud_registered_body for local voxel costmap
+    feature_pub_en: false
+    effect_pub_en: false
+
+pcd_save:
+    pcd_save_en: false
+    interval: -1                 # -1: save accumulated global map as PCD/scans.pcd when Ctrl+C stops mapping.
+                                 # >0: save every N LiDAR frames; final partial batch is also saved on exit.
+
+diagnostics:
+    odom_log_interval_sec: 1.0   # log odom -> base_link xyz[m] and rpy[deg]; 0 disables logging
+
+reloc:
+    reloc_en: false
+    reloc_topic: "/reloc/cloud_align"

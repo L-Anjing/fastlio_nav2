@@ -1,0 +1,44 @@
+ground_segmentation:
+  ros__parameters:
+    n_threads: 4                # 使用的线程数
+
+    r_max: 11.0                 # 参与分割的最大距离（米，必须写成浮点数）
+    n_bins: 120                 # 径向分箱数量
+    n_segments: 360             # 角度分段数量
+
+    max_dist_to_line: 0.1       # 点到地面拟合线的最大垂直距离，小于该值判为地面
+
+    sensor_height: 0.2634         # 雷达离地高度（米），必须与实际安装一致
+    # 点转换到 base_link 后，只输出离地 0.08~1.5m 的非地面点。
+    # 8cm 以下通常是地面拟合边界、稀疏扫描或轻微姿态误差造成的贴地误检；
+    # 真实箱体/墙面仍会有大量高于该阈值的点进入障碍层。
+    obstacle_min_height: 0.08
+    obstacle_max_height: 1.5
+
+    # 只删除真实车体包围盒内部的回波。点会通过 TF 转换到 base_link 后再判断，
+    # 因此不会误删盒外但距离雷达很近的障碍物。
+    self_filter:
+      enabled: true
+      frame: "base_link"
+      box_min: [-0.35, -0.35, 0.0]
+      box_max: [0.35, 0.35, 1.4]
+    min_slope: -0.4             # 判定为地面线的最小坡度
+    max_slope: 0.4              # 判定为地面线的最大坡度
+    max_fit_error: 0.05         # 地面线拟合允许的最大误差
+    long_threshold: 1.0         # 相邻点间距超过该值即认为离得较远
+    max_long_height: 0.1        # 长线段中相对上一个点的最大高度变化
+    max_start_height: 0.5       # 起一条新地面线时，与估计地面高度允许的最大差
+    line_search_angle: 0.8      # 在角度方向上搜索地面线的范围（弧度）
+
+    gravity_aligned_frame: ""   # 留空：直接在原始 livox_frame 内分割
+
+    # 原始 Livox 点用于分割和车体滤波；发布给 costmap 时改用当前 ROS 时间，防止
+    # 雷达硬件时间与动态 TF 缓存错位导致整帧障碍被 message filter 丢弃。
+    restamp_output: true
+
+    latch: false                # 输出话题是否 latch
+    visualize: false            # 是否可视化分割结果，仅调试时开启
+
+    input_topic: "/livox/lidar/pointcloud"
+    obstacle_output_topic: "segmentation/obstacle"
+    ground_output_topic: "segmentation/ground"

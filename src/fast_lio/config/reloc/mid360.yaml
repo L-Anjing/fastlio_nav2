@@ -1,0 +1,5 @@
+# Overlay loaded after config/mapping/mid360.yaml.
+# The pose topic is geometry_msgs/msg/PoseStamped in the odom frame.
+reloc:
+    reloc_en: true
+    reloc_topic: "/reloc/cloud_align"

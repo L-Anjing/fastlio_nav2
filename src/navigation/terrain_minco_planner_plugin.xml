@@ -1,0 +1,10 @@
+<library path="navigation_terrain_minco_planner">
+  <class name="navigation/TerrainMincoPlanner"
+         type="navigation::TerrainMincoPlanner"
+         base_class_type="nav2_core::GlobalPlanner">
+    <description>
+      Terrain-aware 2D A* planner with cached-path dynamic-obstacle validation
+      and quintic MINCO geometric smoothing.
+    </description>
+  </class>
+</library>

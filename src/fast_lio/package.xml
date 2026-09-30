@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>fast_lio</name>
+  <version>1.0.0</version>
+  <description>ROS 2 FAST-LIO mapping for Livox MID-360 with robot-centered odometry and a reloc input.</description>
+
+  <maintainer email="dev@livoxtech.com">FAST-LIO maintainers</maintainer>
+  <license>GPL-2.0-only</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>pcl_conversions</depend>
+  <depend>livox_ros_driver2</depend>
+  <depend>urdf</depend>
+  <depend>std_msgs</depend>
+
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
