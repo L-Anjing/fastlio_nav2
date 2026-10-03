@@ -4,19 +4,29 @@
 
 ### 面向实车的激光建图、重定位与地形感知全局规划
 
-**Livox MID-360 · FAST-LIO2 · Terrain-aware A* + MINCO · ROS 2 Humble**
+[![ROS 2](https://img.shields.io/badge/ROS%202-Humble-blue.svg?style=flat-square&logo=ros)](https://docs.ros.org/en/humble/) [![Livox](https://img.shields.io/badge/Sensor-MID--360-orange.svg?style=flat-square)]() [![FAST-LIO2](https://img.shields.io/badge/SLAM-FAST--LIO2-green.svg?style=flat-square)]() [![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)]()
 
-[系统架构](#系统一览) · [快速开始](#快速开始) · [技术文档](#技术文档) · [配置入口](#配置入口)
+**Livox MID-360** &nbsp;&bull;&nbsp; **FAST-LIO2** &nbsp;&bull;&nbsp; **Terrain-aware A\* + MINCO** &nbsp;&bull;&nbsp; **ROS 2 Humble**
+
+[系统架构](#系统一览) &nbsp;&bull;&nbsp; [快速开始](#快速开始) &nbsp;&bull;&nbsp; [技术文档](#技术文档) &nbsp;&bull;&nbsp; [配置入口](#配置入口) &nbsp;&bull;&nbsp; [工作区布局](#工作区布局)
 
 </div>
 
 ---
 
-把雷达看到的世界，变成机器人可以执行的路线。
+> **把雷达看到的世界，变成机器人可以执行的路线。**
 
-本仓库是一套 ROS 2 实车导航工作区：从 MID-360 点云与 IMU 输入开始，完成激光里程计、先验地图重定位、地面与障碍分割，再生成避障且考虑坡道/台阶方向的全局路径。导航包负责输出路径，底盘控制由外部程序接入。
+本仓库是一套 ROS 2 实车导航工作区：从 MID-360 点云与 IMU 输入开始，完成激光里程计、先验地图重定位、地面与障碍分割，再生成避障且考虑坡道/台阶（待测试）方向的全局路径。导航包负责输出路径，底盘控制由外部程序接入。
 
-## 系统一览
+> 🎬 **实车演示视频**
+> <div align="center">
+>   <!-- 在此处插入您的视频，例如： <video src="your_video.mp4" controls width="100%"></video> 或 HTML iframe -->
+>   <p><em>( Update sooner )</em></p>
+> </div>
+
+---
+
+## 🗺️ 系统一览
 
 ```mermaid
 flowchart LR
@@ -36,28 +46,63 @@ flowchart LR
 | 地面与障碍分割 | `linefit_ground_segmentation_ros` | `/segmentation/ground`、`/segmentation/obstacle` |
 | 地形感知全局规划 | `navigation` | `/map`、`/terrain/*` 输入，`/plan` 输出 |
 
-## 快速开始
+---
 
-环境：Ubuntu + ROS 2 Humble，工作区默认位于 `~/workspace/fastlio_nav2`。
+## 🚀 快速开始
+
+环境：Ubuntu + ROS 2 Humble，工作区默认位于 `~/workspace/fastlio_nav2`
+
+### 1. Enviroment Configuration And Package Build
+
+#### 1.1 依赖安装
+
+```bash
+cd ~/workspace/fastlio_nav2
+source /opt/ros/humble/setup.bash
+rosdep install -r --from-paths src --ignore-src --rosdistro humble -y
+```
+
+#### 1.2 配置文件参数修改
+
+* 雷达IP修改：[`lidar_configs:ip`](src/livox_ros_driver2/config/MID360_config.json)
+* 雷达安装位置：[`robot_extrinsic`](src/fast_lio/config/mapping/mid360.yaml)
+* 实时点云分割参数：`self_fliter` / `obstacle_*_height` / `sensor_height` - [`segmentation_params.yaml`](src/linefit_ground_segmentation_ros/launch/segmentation_params.yaml)
+* 规划采用外接圆半径：[`robot_radias`](src/navigation/params/nav2_params.yaml)
+
+#### 1.3 Build
 
 ```bash
 source /opt/ros/humble/setup.bash
 cd ~/workspace/fastlio_nav2
-rosdep install -r --from-paths src --ignore-src --rosdistro humble -y
 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
-source install/setup.bash
 ```
 
-先启动 Livox 驱动，再启动整条定位与导航链路：
+---
+
+### 2. Prior Map Creation
+
+1. 修改 [`mid360.yaml`](src/fast_lio/config/mapping/mid360.yaml) 内 `pcd_save = true`
+2. 启动 `fastlio mapping` 完成先验地图构建，扫图结束后 `Ctrl+C` 结束自动保存 `PCD` 地图
 
 ```bash
-ros2 launch livox_ros_driver2 msg_MID360_launch.py
-MAP_PCD=/absolute/path/to/scans.pcd ./launch_gnome_chain.sh
+cd ~/workspace/fastlio_nav2
+bash launch_mapping.sh
 ```
 
-重定位成功后，在导航 RViz 中使用 **Nav2 Goal** 设置终点；规划路径通过 `/plan` 发布。首次启动和实车操作细节见各包文档。
+---
 
-## 技术文档
+### 3. Reloc And Plan
+
+```bash
+cd ~/workspace/fastlio_nav2
+bash launch_nav_chain.sh
+```
+
+重定位成功后，在导航 RViz 中使用 **Nav2 Goal** 设置终点，也可以采用话题发布方式设置目标点；规划路径通过 `/plan` 发布。
+
+---
+
+## 📚 技术文档
 
 | 包 | 文档内容 |
 | --- | --- |
@@ -66,7 +111,9 @@ MAP_PCD=/absolute/path/to/scans.pcd ./launch_gnome_chain.sh
 | [`linefit_ground_segmentation_ros`](src/linefit_ground_segmentation_ros/README.md) | 分割节点、车体滤除、话题与参数说明 |
 | [`linefit_ground_segmentation`](src/linefit_ground_segmentation/README.md) | LineFit 分割算法库与核心参数 |
 
-## 配置入口
+---
+
+## ⚙️ 配置入口
 
 | 想调整 | 配置文件 |
 | --- | --- |
@@ -76,7 +123,9 @@ MAP_PCD=/absolute/path/to/scans.pcd ./launch_gnome_chain.sh
 | 地面分割、障碍高度和车体包围盒 | [`segmentation_params.yaml`](src/linefit_ground_segmentation_ros/launch/segmentation_params.yaml) |
 | MID-360 IP 与设备网络参数 | [`MID360_config.json`](src/livox_ros_driver2/config/MID360_config.json) |
 
-## 工作区布局
+---
+
+## 📂 工作区布局
 
 ```text
 src/

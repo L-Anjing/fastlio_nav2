@@ -64,16 +64,16 @@ launch_in_terminal() {
 
 echo "Starting step-by-step chain in gnome-terminal windows..."
 
-launch_in_terminal "02_mid_360_driver2" \
+launch_in_terminal "01_mid_360_driver2" \
   "ros2 launch livox_ros_driver2 msg_MID360_launch.py"
 
-launch_in_terminal "03_fast_lio(reloc)" \
+launch_in_terminal "02_fast_lio(reloc)" \
   "ros2 launch fast_lio reloc_mid360.launch.py map_pcd:=$MAP_PCD use_rviz:=false"
 
-launch_in_terminal "04_ground_segmentation" \
+launch_in_terminal "03_ground_segmentation" \
   "ros2 launch linefit_ground_segmentation_ros segmentation.launch.py"
 
-launch_in_terminal "05_nav2" \
+launch_in_terminal "04_nav2" \
   "ros2 launch navigation bringup_navigation.py use_sim_time:=$SIM_TIME params_file:=$NAV2_PARAMS nav_rviz:=true"
 
 echo "All requested terminals have been opened."
